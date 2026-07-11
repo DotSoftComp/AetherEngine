@@ -1,0 +1,97 @@
+// Aether Engine — PulseLABS backend client (the AI assistant's transport).
+//
+// Talks to a PulseLABS server (self-hosted or cloud) through its public v1
+// REST API with an x-api-key. The interesting endpoints for the in-editor
+// dev team:
+//   POST /v1/ai/complete          routed completion (model router + PII shield
+//                                 + token accounting run server-side)
+//   POST /v1/agents               create a persona (role/personality/mission)
+//   POST /v1/agents/:id/chat      chat in character: JSON response formats,
+//                                 reflection traces, RAG over linked knowledge
+//                                 sources (returns the chunks used - citations)
+//   POST /v1/knowledge-sources    ingest text through the Cortex RAG pipeline
+//                                 and link it to agents ("learn the docs")
+//
+// All calls are synchronous HTTP - use from worker threads (DevTeam does).
+#pragma once
+#include "../core/json.h"
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace ae {
+
+struct PulseConfig {
+    std::string baseUrl = "http://localhost:3051"; // no trailing slash
+    std::string apiKey;                            // sk_live_... / sk_test_...
+
+    bool configured() const { return !apiKey.empty(); }
+    // Persisted at %APPDATA%/AetherEngine/pulse.json (user-level, not per project).
+    static PulseConfig load();
+    bool save() const;
+};
+
+struct PulseAgent {
+    std::string id, name, role;
+};
+
+struct PulseChatResult {
+    bool ok = false;
+    std::string error;
+    std::string content;   // raw response (JSON text when a json format was requested)
+    std::string thoughts;  // reflection trace when requested
+    std::string sessionId; // pass back for multi-turn
+    JsonValue parsed;      // contentParsed (valid only when ok && json requested)
+    bool hasParsed = false;
+    std::vector<std::string> knowledgeUsed; // source/chunk labels (citations)
+    int tokensUsed = 0;
+};
+
+struct PulseContextBlock {
+    std::string category; // e.g. "project"
+    std::string label;
+    std::string data;     // plain text payload
+};
+
+class PulseClient {
+public:
+    PulseConfig config;
+
+    // GET /v1/agents as a liveness + auth probe. Fills `error` on failure.
+    bool online(std::string* error = nullptr);
+
+    std::vector<PulseAgent> listAgents(std::string* error = nullptr);
+    // Returns the new agent id ("" on failure).
+    std::string createAgent(const std::string& name, const std::string& role,
+                            const std::string& personality, const std::string& mission,
+                            const std::string& decisionStyle, const std::string& systemPrompt,
+                            std::string* error = nullptr);
+
+    struct ChatOptions {
+        std::string sessionId;                 // "" = new session
+        std::vector<PulseContextBlock> context;
+        std::string jsonSchema;                // non-empty = force JSON via schema text
+        bool knowledge = false;                // RAG over the agent's linked sources
+        int knowledgeTopK = 5;
+        bool reflection = false;               // request a <THINK> trace
+        int maxTokens = 3000;
+        float temperature = 0.5f;
+    };
+    PulseChatResult chat(const std::string& agentId, const std::string& message,
+                         const ChatOptions& opt);
+
+    // Ingests raw text through Cortex and links it to the agents. Returns the
+    // knowledge-source id ("" on failure). Processing is async server-side.
+    std::string ingestKnowledge(const std::string& name, const std::string& content,
+                                const std::vector<std::string>& agentIds,
+                                std::string* error = nullptr);
+
+    // POST /v1/ai/complete - one-shot routed completion (no persona).
+    PulseChatResult complete(const std::string& systemPrompt, const std::string& userMessage,
+                             bool json, int maxTokens = 2000);
+};
+
+// JSON string escape shared by the request builders.
+std::string pulseJsonEscape(const std::string& s);
+
+} // namespace ae
