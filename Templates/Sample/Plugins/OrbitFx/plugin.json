@@ -1,0 +1,5 @@
+{
+  "description": "Sample plugin: PulseLight component (pulses a Light's intensity)",
+  "enabled": true,
+  "sourceDir": "Source"
+}

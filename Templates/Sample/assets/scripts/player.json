@@ -1,0 +1,13 @@
+{
+  "scriptGraph": 2,
+  "variables": [],
+  "nodes": [
+    { "id": "upd", "type": "OnUpdate", "exec": ["sap"], "in": [], "x": 40, "y": 60 },
+    { "id": "selfP", "type": "Self", "exec": [], "in": [], "x": 40, "y": 200 },
+    { "id": "gv", "type": "GetVelocity", "exec": [], "in": [{ "from": "selfP", "out": 0 }], "x": 240, "y": 200 },
+    { "id": "bv", "type": "BreakVec3", "exec": [], "in": [{ "from": "gv", "out": 0 }], "x": 440, "y": 200 },
+    { "id": "mv", "type": "MakeVec3", "exec": [], "in": [{ "from": "bv", "out": 0 }, { "t": "Float", "f": 0 }, { "from": "bv", "out": 2 }], "x": 640, "y": 200 },
+    { "id": "len", "type": "Length", "exec": [], "in": [{ "from": "mv", "out": 0 }], "x": 840, "y": 200 },
+    { "id": "sap", "type": "SetAnimParam", "p": "Speed", "exec": [""], "in": [{ "from": "selfP", "out": 0 }, { "from": "len", "out": 0 }], "x": 300, "y": 60 }
+  ]
+}

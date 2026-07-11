@@ -1,0 +1,6 @@
+{
+  "name": "Blank",
+  "engineVersion": "0.1.0",
+  "startupScene": "assets/maps/main.json",
+  "module": { "name": "GameModule", "sourceDir": "Source" }
+}

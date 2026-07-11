@@ -1,0 +1,15 @@
+{
+  "inputMap": 1,
+  "actions": [
+    { "name": "Jump", "keys": ["SPACE"], "pad": ["A"] },
+    { "name": "Interact", "keys": ["E"], "pad": ["X"] },
+    { "name": "Boost", "keys": ["B"], "pad": ["B"] },
+    { "name": "Pause", "keys": ["ESC"], "pad": ["START"] }
+  ],
+  "axes": [
+    { "name": "MoveX", "pos": ["D"], "neg": ["A"], "padAxis": "LX", "scale": 1 },
+    { "name": "MoveY", "pos": ["W"], "neg": ["S"], "padAxis": "LY", "scale": 1 },
+    { "name": "LookX", "pos": ["RIGHT"], "neg": ["LEFT"], "padAxis": "RX", "scale": 1 },
+    { "name": "LookY", "pos": ["UP"], "neg": ["DOWN"], "padAxis": "RY", "scale": 1 }
+  ]
+}

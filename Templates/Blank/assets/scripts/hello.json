@@ -1,0 +1,10 @@
+{
+ "scriptGraph": 2,
+ "variables": [],
+ "nodes": [
+  {"id": "start", "type": "OnStart", "exec": ["say"], "in": [], "x": 40, "y": 40},
+  {"id": "say", "type": "Log", "exec": [""],
+   "in": [{"t": "String", "s": "Hello from Aether - edit assets/scripts/hello.json"}],
+   "x": 240, "y": 40}
+ ]
+}

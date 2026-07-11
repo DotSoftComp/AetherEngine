@@ -1,0 +1,20 @@
+{
+  "columns": [
+    "value",
+    "label"
+  ],
+  "rows": {
+    "boost_impulse": {
+      "value": 7,
+      "label": "WreckingBall boost strength (Y impulse)"
+    },
+    "orb_speed": {
+      "value": 1.2,
+      "label": "ScriptOrb orbit speed (rad/s)"
+    },
+    "orb_radius": {
+      "value": 2.5,
+      "label": "ScriptOrb orbit radius (m)"
+    }
+  }
+}

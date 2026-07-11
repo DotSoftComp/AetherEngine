@@ -1,0 +1,226 @@
+{
+ "version": 1,
+ "environment": {
+  "sunDir": [
+   0.42,
+   0.55,
+   0.3
+  ],
+  "skyIntensity": 22
+ },
+ "entities": [
+  {
+   "name": "Floor",
+   "guid": "b0000000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "plane",
+     "texSet": "tile",
+     "castShadow": false,
+     "material": {
+      "baseColor": [
+       1,
+       1,
+       1,
+       1
+      ],
+      "metallic": 0.0,
+      "roughness": 0.6,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      12,
+      0.1,
+      8
+     ],
+     "center": [
+      0,
+      -0.1,
+      0
+     ],
+     "isTrigger": false
+    }
+   ]
+  },
+  {
+   "name": "Cube",
+   "guid": "b0000000000000000000000000000002",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0.5,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.85,
+       0.55,
+       0.25,
+       1
+      ],
+      "metallic": 0.0,
+      "roughness": 0.4,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/hello.json"
+    }
+   ]
+  },
+  {
+   "name": "KeyLight",
+   "guid": "b0000000000000000000000000000003",
+   "parent": -1,
+   "active": true,
+   "position": [
+    3,
+    4,
+    3
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Light",
+     "lightType": 0,
+     "color": [
+      1,
+      0.95,
+      0.9
+     ],
+     "intensity": 14,
+     "range": 20
+    }
+   ]
+  },
+  {
+   "name": "MainCamera",
+   "guid": "b0000000000000000000000000000004",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    2.5,
+    7
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Camera",
+     "fov": 55,
+     "near": 0.1,
+     "far": 300,
+     "isDefault": true
+    },
+    {
+     "type": "CameraController",
+     "moveSpeed": 4.5,
+     "sprintSpeed": 14,
+     "lookSens": 0.18,
+     "yaw": 0,
+     "pitch": -14
+    }
+   ]
+  }
+ ]
+}

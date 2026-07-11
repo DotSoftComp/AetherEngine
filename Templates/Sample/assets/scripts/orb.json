@@ -1,0 +1,588 @@
+{
+ "scriptGraph": 2,
+ "variables": [
+  {
+   "name": "t",
+   "t": "Float",
+   "f": 0
+  },
+  {
+   "name": "radius",
+   "t": "Float",
+   "f": 2.5
+  },
+  {
+   "name": "speed",
+   "t": "Float",
+   "f": 1.2
+  }
+ ],
+ "nodes": [
+  {
+   "id": "upd",
+   "type": "OnUpdate",
+   "exec": [
+    "setT"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 60
+  },
+  {
+   "id": "getT",
+   "type": "GetVar",
+   "p": "t",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 200
+  },
+  {
+   "id": "getS",
+   "type": "GetVar",
+   "p": "speed",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 300
+  },
+  {
+   "id": "mulDT",
+   "type": "Multiply",
+   "exec": [],
+   "in": [
+    {
+     "from": "upd",
+     "out": 0
+    },
+    {
+     "from": "getS",
+     "out": 0
+    }
+   ],
+   "x": 240,
+   "y": 260
+  },
+  {
+   "id": "addT",
+   "type": "Add",
+   "exec": [],
+   "in": [
+    {
+     "from": "getT",
+     "out": 0
+    },
+    {
+     "from": "mulDT",
+     "out": 0
+    }
+   ],
+   "x": 440,
+   "y": 220
+  },
+  {
+   "id": "setT",
+   "type": "SetVar",
+   "p": "t",
+   "exec": [
+    "setP"
+   ],
+   "in": [
+    {
+     "from": "addT",
+     "out": 0
+    }
+   ],
+   "x": 300,
+   "y": 60
+  },
+  {
+   "id": "sinT",
+   "type": "Sin",
+   "exec": [],
+   "in": [
+    {
+     "from": "getT",
+     "out": 0
+    }
+   ],
+   "x": 640,
+   "y": 200
+  },
+  {
+   "id": "cosT",
+   "type": "Cos",
+   "exec": [],
+   "in": [
+    {
+     "from": "getT",
+     "out": 0
+    }
+   ],
+   "x": 640,
+   "y": 300
+  },
+  {
+   "id": "getR",
+   "type": "GetVar",
+   "p": "radius",
+   "exec": [],
+   "in": [],
+   "x": 640,
+   "y": 400
+  },
+  {
+   "id": "mx",
+   "type": "Multiply",
+   "exec": [],
+   "in": [
+    {
+     "from": "sinT",
+     "out": 0
+    },
+    {
+     "from": "getR",
+     "out": 0
+    }
+   ],
+   "x": 840,
+   "y": 220
+  },
+  {
+   "id": "mz",
+   "type": "Multiply",
+   "exec": [],
+   "in": [
+    {
+     "from": "cosT",
+     "out": 0
+    },
+    {
+     "from": "getR",
+     "out": 0
+    }
+   ],
+   "x": 840,
+   "y": 320
+  },
+  {
+   "id": "mv",
+   "type": "MakeVec3",
+   "exec": [],
+   "in": [
+    {
+     "from": "mx",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 1.4
+    },
+    {
+     "from": "mz",
+     "out": 0
+    }
+   ],
+   "x": 1040,
+   "y": 260
+  },
+  {
+   "id": "av",
+   "type": "AddVec3",
+   "exec": [],
+   "in": [
+    {
+     "from": "mv",
+     "out": 0
+    },
+    {
+     "t": "Vec3",
+     "v": [
+      -2,
+      0,
+      4.5
+     ]
+    }
+   ],
+   "x": 1240,
+   "y": 260
+  },
+  {
+   "id": "selfN",
+   "type": "Self",
+   "exec": [],
+   "in": [],
+   "x": 1240,
+   "y": 120
+  },
+  {
+   "id": "setP",
+   "type": "SetPosition",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "from": "selfN",
+     "out": 0
+    },
+    {
+     "from": "av",
+     "out": 0
+    }
+   ],
+   "x": 1460,
+   "y": 60
+  },
+  {
+   "id": "st",
+   "type": "OnStart",
+   "exec": [
+    "setSpd"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 520
+  },
+  {
+   "id": "l0",
+   "type": "Log",
+   "exec": [
+    "dly"
+   ],
+   "in": [
+    {
+     "t": "String",
+     "s": "orb: gameplay loop running"
+    }
+   ],
+   "x": 260,
+   "y": 520
+  },
+  {
+   "id": "dly",
+   "type": "Delay",
+   "exec": [
+    "lp"
+   ],
+   "in": [
+    {
+     "t": "Float",
+     "f": 1.5
+    }
+   ],
+   "x": 480,
+   "y": 520
+  },
+  {
+   "id": "gp",
+   "type": "GetPosition",
+   "exec": [],
+   "in": [
+    {
+     "from": "selfN",
+     "out": 0
+    }
+   ],
+   "x": 480,
+   "y": 640
+  },
+  {
+   "id": "app",
+   "type": "Append",
+   "exec": [],
+   "in": [
+    {
+     "t": "String",
+     "s": "orb position "
+    },
+    {
+     "from": "gp",
+     "out": 0
+    }
+   ],
+   "x": 700,
+   "y": 640
+  },
+  {
+   "id": "lp",
+   "type": "Log",
+   "exec": [
+    "nrg"
+   ],
+   "in": [
+    {
+     "from": "app",
+     "out": 0
+    }
+   ],
+   "x": 700,
+   "y": 520
+  },
+  {
+   "id": "getE",
+   "type": "GetFlag",
+   "p": "energy",
+   "exec": [],
+   "in": [],
+   "x": 920,
+   "y": 640
+  },
+  {
+   "id": "addE",
+   "type": "Add",
+   "exec": [],
+   "in": [
+    {
+     "from": "getE",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 1
+    }
+   ],
+   "x": 1100,
+   "y": 640
+  },
+  {
+   "id": "nrg",
+   "type": "SetFlag",
+   "p": "energy",
+   "exec": [
+    "dly"
+   ],
+   "in": [
+    {
+     "from": "addE",
+     "out": 0
+    }
+   ],
+   "x": 920,
+   "y": 520
+  },
+  {
+   "id": "btn",
+   "type": "OnUIButton",
+   "p": "boost",
+   "exec": [
+    "blog"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 760
+  },
+  {
+   "id": "blog",
+   "type": "Log",
+   "exec": [
+    "bimp"
+   ],
+   "in": [
+    {
+     "from": "bmsg",
+     "out": 0
+    }
+   ],
+   "x": 260,
+   "y": 760
+  },
+  {
+   "id": "fwb",
+   "type": "FindEntity",
+   "p": "WreckingBall",
+   "exec": [],
+   "in": [
+    {}
+   ],
+   "x": 260,
+   "y": 880
+  },
+  {
+   "id": "bimp",
+   "type": "AddImpulse",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "from": "fwb",
+     "out": 0
+    },
+    {
+     "from": "dVec",
+     "out": 0
+    }
+   ],
+   "x": 480,
+   "y": 760
+  },
+  {
+   "id": "act",
+   "type": "OnAction",
+   "p": "Boost",
+   "exec": [
+    "blog"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 880
+  },
+  {
+   "id": "dSpd",
+   "type": "GetData",
+   "p": "assets/data/gameplay.json",
+   "exec": [],
+   "in": [
+    {
+     "t": "String",
+     "s": "orb_speed"
+    },
+    {
+     "t": "String",
+     "s": "value"
+    }
+   ],
+   "x": 40,
+   "y": 620
+  },
+  {
+   "id": "dRad",
+   "type": "GetData",
+   "p": "assets/data/gameplay.json",
+   "exec": [],
+   "in": [
+    {
+     "t": "String",
+     "s": "orb_radius"
+    },
+    {
+     "t": "String",
+     "s": "value"
+    }
+   ],
+   "x": 40,
+   "y": 680
+  },
+  {
+   "id": "setSpd",
+   "type": "SetVar",
+   "p": "speed",
+   "exec": [
+    "setRad"
+   ],
+   "in": [
+    {
+     "from": "dSpd",
+     "out": 0
+    }
+   ],
+   "x": 220,
+   "y": 520
+  },
+  {
+   "id": "setRad",
+   "type": "SetVar",
+   "p": "radius",
+   "exec": [
+    "slog"
+   ],
+   "in": [
+    {
+     "from": "dRad",
+     "out": 0
+    }
+   ],
+   "x": 400,
+   "y": 520
+  },
+  {
+   "id": "dImp",
+   "type": "GetData",
+   "p": "assets/data/gameplay.json",
+   "exec": [],
+   "in": [
+    {
+     "t": "String",
+     "s": "boost_impulse"
+    },
+    {
+     "t": "String",
+     "s": "value"
+    }
+   ],
+   "x": 260,
+   "y": 880
+  },
+  {
+   "id": "dVec",
+   "type": "MakeVec3",
+   "exec": [],
+   "in": [
+    {
+     "t": "Float",
+     "f": 0
+    },
+    {
+     "from": "dImp",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 0
+    }
+   ],
+   "x": 420,
+   "y": 880
+  },
+  {
+   "id": "bmsg",
+   "type": "Append",
+   "exec": [],
+   "in": [
+    {
+     "t": "String",
+     "s": "BOOST impulse from data table: "
+    },
+    {
+     "from": "dImp",
+     "out": 1
+    }
+   ],
+   "x": 100,
+   "y": 700
+  },
+  {
+   "id": "smsg",
+   "type": "Append",
+   "exec": [],
+   "in": [
+    {
+     "t": "String",
+     "s": "Orb tuned from data table: speed="
+    },
+    {
+     "from": "dSpd",
+     "out": 1
+    }
+   ],
+   "x": 400,
+   "y": 640
+  },
+  {
+   "id": "slog",
+   "type": "Log",
+   "exec": [
+    "l0"
+   ],
+   "in": [
+    {
+     "from": "smsg",
+     "out": 0
+    }
+   ],
+   "x": 580,
+   "y": 520
+  }
+ ]
+}

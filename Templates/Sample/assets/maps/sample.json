@@ -1,0 +1,4271 @@
+{
+ "version": 1,
+ "environment": {
+  "sunDir": [
+   0.358401,
+   0.529919,
+   0.768593
+  ],
+  "skyIntensity": 22
+ },
+ "entities": [
+  {
+   "name": "Floor",
+   "guid": "c5c3b012f67f4844bc1bd818ee347979",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "plane",
+     "texSet": "tile",
+     "castShadow": false,
+     "material": {
+      "baseColor": [
+       1,
+       1,
+       1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 1,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      12,
+      0.1,
+      8
+     ],
+     "radius": 0.5,
+     "height": 2,
+     "center": [
+      0,
+      -0.1,
+      0
+     ],
+     "isTrigger": false
+    }
+   ]
+  },
+  {
+   "name": "Crate",
+   "guid": "c0de0001000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    3.7614,
+    0.561878,
+    6.6669
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.55,
+       0.36,
+       0.18,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.7,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "RigidBody",
+     "bodyType": 1,
+     "mass": 1,
+     "useGravity": true,
+     "linearDamping": 0.05,
+     "angularDamping": 0.05,
+     "restitution": 0,
+     "friction": 0.6,
+     "lockRotation": false
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "radius": 0.5,
+     "height": 2,
+     "center": [
+      0,
+      0,
+      0
+     ],
+     "isTrigger": false
+    }
+   ]
+  },
+  {
+   "name": "Crate",
+   "guid": "c0de0002000000000000000000000002",
+   "parent": -1,
+   "active": true,
+   "position": [
+    3.92808,
+    1.61192,
+    6.57972
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.6,
+       0.4,
+       0.2,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.7,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "RigidBody",
+     "bodyType": 1,
+     "mass": 1,
+     "useGravity": true,
+     "linearDamping": 0.05,
+     "angularDamping": 0.05,
+     "restitution": 0,
+     "friction": 0.6,
+     "lockRotation": false
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "radius": 0.5,
+     "height": 2,
+     "center": [
+      0,
+      0,
+      0
+     ],
+     "isTrigger": false
+    }
+   ]
+  },
+  {
+   "name": "Crate",
+   "guid": "c0de0003000000000000000000000003",
+   "parent": -1,
+   "active": true,
+   "position": [
+    3.88775,
+    2.66192,
+    6.56727
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.5,
+       0.32,
+       0.16,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.7,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "RigidBody",
+     "bodyType": 1,
+     "mass": 1,
+     "useGravity": true,
+     "linearDamping": 0.05,
+     "angularDamping": 0.05,
+     "restitution": 0,
+     "friction": 0.6,
+     "lockRotation": false
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "radius": 0.5,
+     "height": 2,
+     "center": [
+      0,
+      0,
+      0
+     ],
+     "isTrigger": false
+    }
+   ]
+  },
+  {
+   "name": "WreckingBall",
+   "guid": "c0de00b1000000000000000000000004",
+   "parent": -1,
+   "active": true,
+   "position": [
+    3.94583,
+    6.4619,
+    6.70489
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.8,
+       0.8,
+       0.85,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.25,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "RigidBody",
+     "bodyType": 1,
+     "mass": 3,
+     "useGravity": true,
+     "linearDamping": 0.05,
+     "angularDamping": 0.05,
+     "restitution": 0.35,
+     "friction": 0.4,
+     "lockRotation": false
+    },
+    {
+     "type": "Collider",
+     "shape": 1,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "radius": 0.5,
+     "height": 2,
+     "center": [
+      0,
+      0,
+      0
+     ],
+     "isTrigger": false
+    }
+   ]
+  },
+  {
+   "name": "AmbientSpeaker",
+   "guid": "c0de00c1000000000000000000000005",
+   "parent": -1,
+   "active": true,
+   "position": [
+    5.5,
+    1.6,
+    -3.35759
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.3,
+    0.3,
+    0.3
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": false,
+     "material": {
+      "baseColor": [
+       0.1,
+       0.4,
+       0.5,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.4,
+      "emissive": [
+       0,
+       2,
+       2.6
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "AudioSource",
+     "clip": "assets/audio/ambient.wav",
+     "volume": 0.9,
+     "loop": true,
+     "spatial": true,
+     "playOnStart": true,
+     "minDistance": 5,
+     "maxDistance": 50
+    }
+   ]
+  },
+  {
+   "name": "IntroScript",
+   "guid": "5c817000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/intro.json"
+    }
+   ]
+  },
+  {
+   "name": "Fountain",
+   "guid": "fa170000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    6.5,
+    0.15,
+    5.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Particles",
+     "rate": 140,
+     "lifetime": 1.7,
+     "lifetimeJitter": 0.25,
+     "speed": 5.5,
+     "speedJitter": 0.25,
+     "spread": 11,
+     "worldSpace": true,
+     "maxParticles": 512,
+     "gravity": -6,
+     "drag": 0.15,
+     "sizeStart": 0.14,
+     "sizeEnd": 0.04,
+     "colorStart": [
+      0.6,
+      2.6,
+      4.2,
+      1
+     ],
+     "colorEnd": [
+      0.08,
+      0.3,
+      0.9,
+      0
+     ],
+     "additive": true
+    }
+   ]
+  },
+  {
+   "name": "GameHUD",
+   "guid": "0a1d0000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "UIDocument",
+     "doc": "assets/ui/hud.json"
+    }
+   ]
+  },
+  {
+   "name": "EnergySphere",
+   "guid": "3a7e9000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    4.5,
+    1.3,
+    4.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1.1,
+    1.1,
+    1.1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       1,
+       1,
+       1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.5,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "assets/materials/energy.json",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "ScriptOrb",
+   "guid": "5c817000000000000000000000000002",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -1.95,
+    1.4,
+    6.9995
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.35,
+    0.35,
+    0.35
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.9,
+       0.5,
+       0.1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.3,
+      "emissive": [
+       2.4,
+       1.1,
+       0.2
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/orb.json"
+    },
+    {
+     "type": "Particles",
+     "rate": 90,
+     "lifetime": 0.9,
+     "lifetimeJitter": 0.3,
+     "speed": 0.5,
+     "speedJitter": 0.5,
+     "spread": 70,
+     "worldSpace": true,
+     "maxParticles": 256,
+     "gravity": -0.4,
+     "drag": 0.6,
+     "sizeStart": 0.16,
+     "sizeEnd": 0.02,
+     "colorStart": [
+      3,
+      1.4,
+      0.35,
+      1
+     ],
+     "colorEnd": [
+      0.7,
+      0.12,
+      0.02,
+      0
+     ],
+     "additive": true
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "81a7f8f3de9340788d805223be2596e5",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -9,
+    0.5,
+    -4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.08,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "AudioSource",
+     "clip": "assets/audio/ambient.wav",
+     "volume": 1,
+     "loop": true,
+     "spatial": true,
+     "playOnStart": true,
+     "minDistance": 5,
+     "maxDistance": 50
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "6811e65c05c04fc7ad10178354650a57",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -7.7,
+    0.5,
+    -4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.254,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "4a65182cc8e3438e9ca1a7277ed92b0d",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -6.4,
+    0.5,
+    -4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.428,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "4bb82f3d27504a24b1a26ecfb8036fce",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -5.1,
+    0.5,
+    -4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.602,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "5439522ec2774f748199c2cac82bc9a8",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.8,
+    0.5,
+    -4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.776,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "bbd0424e2e814edcb8f92b5674a9fc09",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.5,
+    0.5,
+    -4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.95,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "b6b34413a93346f8894adaba0e350fd9",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -9,
+    0.5,
+    -2.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.2,
+      "roughness": 0.08,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "fc553d36bcca4254ad6c1cc157bf1599",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -7.7,
+    0.5,
+    -2.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.2,
+      "roughness": 0.254,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "cfaa5a7bcfb04a94827d2d13ea74f41f",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -6.4,
+    0.5,
+    -2.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.2,
+      "roughness": 0.428,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "f5d568d39d204f088cca39d5c863c0f1",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -5.1,
+    0.5,
+    -2.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.2,
+      "roughness": 0.602,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "a061e68c4f3b4b44bd5b7d617e1e2dab",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.8,
+    0.5,
+    -2.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.2,
+      "roughness": 0.776,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "2387beea82da41d2b347b9ff3d2aa017",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.5,
+    0.5,
+    -2.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.2,
+      "roughness": 0.95,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "c7631725f8e54eca8317c78abe944792",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -9,
+    0.5,
+    -1.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.4,
+      "roughness": 0.08,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "bb3202b62a8a4c7bb1c6e70fa6e56e31",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -7.7,
+    0.5,
+    -1.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.4,
+      "roughness": 0.254,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "bc433ca02bd34ce1b6bfcb6257893f92",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -6.4,
+    0.5,
+    -1.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.4,
+      "roughness": 0.428,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "fa70459c43ff4308956f7cb6c9869820",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -5.1,
+    0.5,
+    -1.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.4,
+      "roughness": 0.602,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "d838e13f84494481ba00ebd2c6d1d843",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.8,
+    0.5,
+    -1.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.4,
+      "roughness": 0.776,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "76a1dc660b6e4b3087a14f79db4e0766",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.5,
+    0.5,
+    -1.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.4,
+      "roughness": 0.95,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "5fea7955f81b4ca29bfc58983d83c8eb",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -9,
+    0.5,
+    -0.1
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.6,
+      "roughness": 0.08,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "a8ef9024d74d4a25bb0ee051bc39ed32",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -7.7,
+    0.5,
+    -0.1
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.6,
+      "roughness": 0.254,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "9ed948d57a4e4db9a14c11c6c22d8e6b",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -6.4,
+    0.5,
+    -0.1
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.6,
+      "roughness": 0.428,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "1d338c2cb7544d20b66f392aedec68b5",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -5.1,
+    0.5,
+    -0.1
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.6,
+      "roughness": 0.602,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "5bb8826df154448d915cafadcc4b1d59",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.8,
+    0.5,
+    -0.1
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.6,
+      "roughness": 0.776,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "ada1eebb18bb42ef996ab30a0cf1fad6",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.5,
+    0.5,
+    -0.1
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.6,
+      "roughness": 0.95,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "541e39f48b8f4d6c9f65980c52a092cf",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -9,
+    0.5,
+    1.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.8,
+      "roughness": 0.08,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "5658157d69624302be9cb6645f29ac09",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -7.7,
+    0.5,
+    1.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.8,
+      "roughness": 0.254,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "40b06b7074db4cda906420f0aec66ff9",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -6.4,
+    0.5,
+    1.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.8,
+      "roughness": 0.428,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "01b8e1bd4c234e9e925dc0d81fdf2b47",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -5.1,
+    0.5,
+    1.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.8,
+      "roughness": 0.602,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "9b6815c49e134a3582a94163e49dd519",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.8,
+    0.5,
+    1.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.8,
+      "roughness": 0.776,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "e0d9cfa8f7e04a39b57fa595d0c99424",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.5,
+    0.5,
+    1.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 0.8,
+      "roughness": 0.95,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "05f272f3d8204226ab2801ce4dea282d",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -9,
+    0.5,
+    2.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.08,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "a6325b7cd0bd4e83aab8d38112ee0ed1",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -7.7,
+    0.5,
+    2.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.254,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "9609451617394de0be7943af478fc367",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -6.4,
+    0.5,
+    2.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.428,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "7faf164da18f4f71a18c4691e4dd0ecc",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -5.1,
+    0.5,
+    2.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.602,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "0be38572edf642a48180457d5bcd3499",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.8,
+    0.5,
+    2.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.776,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GridSphere",
+   "guid": "2a9497beffa84bcd860b1849fe6b2253",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.5,
+    0.5,
+    2.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.86,
+       0.18,
+       0.1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.95,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "GoldSphere",
+   "guid": "cc080e9351b042a2b9f7d8c4e4df0d8c",
+   "parent": -1,
+   "active": true,
+   "position": [
+    2.5,
+    1.1,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    2.2,
+    2.2,
+    2.2
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       1,
+       0.77,
+       0.34,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 0.18,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "RustedTorus",
+   "guid": "d0d7f4cd6ef64c0c8be2c0fcac84c8b7",
+   "parent": -1,
+   "active": true,
+   "position": [
+    6,
+    1.34,
+    2
+   ],
+   "rotation": [
+    0.683013,
+    -0.183013,
+    0.183013,
+    0.683013
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "torus",
+     "texSet": "rust",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       1,
+       1,
+       1,
+       1
+      ],
+      "metallic": 1,
+      "roughness": 1,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "CeramicCube",
+   "guid": "76fe68ea521f4a37a8752ccfcfcaf43e",
+   "parent": -1,
+   "active": true,
+   "position": [
+    4.8,
+    0.75,
+    -2.6
+   ],
+   "rotation": [
+    0,
+    0.21644,
+    0,
+    0.976296
+   ],
+   "scale": [
+    1.5,
+    1.5,
+    1.5
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.92,
+       0.93,
+       0.95,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.08,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "BlueSphere",
+   "guid": "6fd6d6007e2649eb8358253288c7df8c",
+   "parent": -1,
+   "active": true,
+   "position": [
+    7.5,
+    0.9,
+    -0.8
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1.8,
+    1.8,
+    1.8
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.05,
+       0.12,
+       0.45,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.85,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "FlightHelmet",
+   "guid": "35a5cc8f566141dca51372c38fa466a6",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.8,
+    0,
+    4.6
+   ],
+   "rotation": [
+    0,
+    0.258819,
+    0,
+    0.965926
+   ],
+   "scale": [
+    2.4,
+    2.4,
+    2.4
+   ],
+   "components": [
+    {
+     "type": "Model",
+     "path": "assets/FlightHelmet/FlightHelmet.gltf",
+     "animate": false
+    }
+   ]
+  },
+  {
+   "name": "DamagedHelmet",
+   "guid": "84fbd83700c04eb38ce5ea90ea2d60aa",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0.9,
+    1.5,
+    2.2
+   ],
+   "rotation": [
+    0,
+    -0.14781,
+    0,
+    0.989016
+   ],
+   "scale": [
+    1.3,
+    1.3,
+    1.3
+   ],
+   "components": [
+    {
+     "type": "Model",
+     "path": "assets/DamagedHelmet.glb",
+     "animate": false
+    },
+    {
+     "type": "Rotator",
+     "speed": 30,
+     "axis": [
+      0,
+      1,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "CesiumMan",
+   "guid": "859fcec245224e379a937213f31d471c",
+   "parent": -1,
+   "active": true,
+   "position": [
+    3.1,
+    0,
+    4.4
+   ],
+   "rotation": [
+    0,
+    -0.976296,
+    0,
+    0.21644
+   ],
+   "scale": [
+    1.5,
+    1.5,
+    1.5
+   ],
+   "components": [
+    {
+     "type": "Model",
+     "path": "assets/CesiumMan.glb",
+     "animate": true
+    }
+   ]
+  },
+  {
+   "name": "Player",
+   "guid": "b1e8a1ad99564876a9062828df81bb0f",
+   "parent": -1,
+   "active": true,
+   "position": [
+    7.6,
+    0.05,
+    0.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "RigidBody",
+     "bodyType": 1,
+     "mass": 1,
+     "useGravity": true,
+     "linearDamping": 0.05,
+     "angularDamping": 0.05,
+     "restitution": 0,
+     "friction": 0.6,
+     "lockRotation": true
+    },
+    {
+     "type": "Collider",
+     "shape": 2,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "radius": 0.3,
+     "height": 1.4,
+     "center": [
+      0,
+      0.7,
+      0
+     ],
+     "isTrigger": false
+    },
+    {
+     "type": "CharacterController",
+     "moveSpeed": 2.4,
+     "sprintSpeed": 4.8,
+     "jumpSpeed": 5,
+     "faceMoveDir": true
+    },
+    {
+     "type": "Animator",
+     "graph": "assets/anim/fox.json"
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/player.json"
+    }
+   ]
+  },
+  {
+   "name": "FoxMesh",
+   "guid": "f0c5e000000000000000000000000001",
+   "parent": 54,
+   "active": true,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    0,
+    -0.7071068,
+    0,
+    0.7071068
+   ],
+   "scale": [
+    0.02,
+    0.02,
+    0.02
+   ],
+   "components": [
+    {
+     "type": "Model",
+     "path": "assets/Fox.glb",
+     "animate": true
+    }
+   ]
+  },
+  {
+   "name": "SkinSphere",
+   "guid": "2546a8e1e3a047e9b6d74c612184caad",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -0.4,
+    0.45,
+    6.3
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.83,
+       0.58,
+       0.46,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.42,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 1,
+      "sssCurvature": 0.25,
+      "translucency": 0.35,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "SkinSphere",
+   "guid": "370dcc62e3814fa297a9689f7a98ae8c",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0.75,
+    0.45,
+    6.3
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.83,
+       0.58,
+       0.46,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.42,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 1,
+      "sssCurvature": 0.55,
+      "translucency": 0.6,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "SkinSphere",
+   "guid": "e808f991ccba4b8c9562491f3ae4d7a9",
+   "parent": -1,
+   "active": true,
+   "position": [
+    1.9,
+    0.45,
+    6.3
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.83,
+       0.58,
+       0.46,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.42,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 1,
+      "sssCurvature": 0.85,
+      "translucency": 0.85,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "InterrogationTrigger",
+   "guid": "3ab54e086cf848f5a0173fe703af4ce2",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2,
+    2,
+    5.5
+   ],
+   "rotation": [
+    0,
+    0.182236,
+    0,
+    0.983255
+   ],
+   "scale": [
+    0.3,
+    0.3,
+    0.3
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": false,
+     "material": {
+      "baseColor": [
+       0.2,
+       0.9,
+       0.95,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 0.3,
+      "emissive": [
+       0.12,
+       0.54,
+       0.57
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "Spin",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "degreesPerSec": 90
+    },
+    {
+     "type": "DialogueTrigger",
+     "scene": "assets/dialogue/interrogation.json",
+     "radius": 2.5,
+     "once": true,
+     "player": "MainCamera"
+    }
+   ]
+  },
+  {
+   "name": "DialogueCamWide",
+   "guid": "611d36f060e54796ab3b6716a173e088",
+   "parent": -1,
+   "active": true,
+   "position": [
+    1.5,
+    4.2,
+    12.5
+   ],
+   "rotation": [
+    -0.132935,
+    0.2276,
+    0.0313816,
+    0.964128
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Camera",
+     "fov": 50,
+     "near": 0.1,
+     "far": 300,
+     "isDefault": false
+    }
+   ]
+  },
+  {
+   "name": "DialogueCamCloseup",
+   "guid": "34a3217d1fdb48baada7a539c7c23757",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -3.2,
+    2.4,
+    6.5
+   ],
+   "rotation": [
+    -0.113213,
+    -0.420828,
+    -0.053026,
+    0.898485
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Camera",
+     "fov": 38,
+     "near": 0.1,
+     "far": 300,
+     "isDefault": false
+    }
+   ]
+  },
+  {
+   "name": "PulsingLight",
+   "guid": "dd573572153542f9b1a8ebbb395d1bd3",
+   "parent": -1,
+   "active": true,
+   "position": [
+    5.5,
+    1.4,
+    0
+   ],
+   "rotation": [
+    0,
+    0.19509,
+    0,
+    0.980785
+   ],
+   "scale": [
+    0.22,
+    0.22,
+    0.22
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": false,
+     "material": {
+      "baseColor": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 1,
+      "emissive": [
+       6.3,
+       2.835,
+       0.756
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "Light",
+     "lightType": 1,
+     "color": [
+      18,
+      16.9,
+      2.16
+     ],
+     "intensity": 13.36,
+     "range": 12,
+     "innerAngle": 28,
+     "outerAngle": 37
+    },
+    {
+     "type": "Orbit",
+     "radius": 5.5,
+     "speed": 0.5,
+     "phase": 0,
+     "bobAmp": 0.6,
+     "bobSpeed": 1.7,
+     "height": 1.4
+    },
+    {
+     "type": "PulseLight",
+     "speed": 1.5,
+     "amount": 0.7
+    }
+   ]
+  },
+  {
+   "name": "Light",
+   "guid": "e75d07ff25cb494aaea9c533972c11a7",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.75002,
+    1.91961,
+    4.76313
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.22,
+    0.22,
+    0.22
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": false,
+     "material": {
+      "baseColor": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 1,
+      "emissive": [
+       0.735,
+       3.185,
+       4.9
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "Light",
+     "lightType": 0,
+     "color": [
+      2.1,
+      9.1,
+      14
+     ],
+     "intensity": 1,
+     "range": 12,
+     "innerAngle": 25,
+     "outerAngle": 35
+    },
+    {
+     "type": "Orbit",
+     "radius": 5.5,
+     "speed": 0.5,
+     "phase": 2.0944,
+     "bobAmp": 0.6,
+     "bobSpeed": 1.7,
+     "height": 1.4
+    }
+   ]
+  },
+  {
+   "name": "Light",
+   "guid": "d43f188383e24240aba8bd3bf208f695",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2.75,
+    0.880385,
+    -4.76314
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.22,
+    0.22,
+    0.22
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "texSet": "",
+     "castShadow": false,
+     "material": {
+      "baseColor": [
+       0,
+       0,
+       0,
+       1
+      ],
+      "metallic": 0,
+      "roughness": 1,
+      "emissive": [
+       3.78,
+       0.84,
+       3.15
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "Light",
+     "lightType": 0,
+     "color": [
+      10.8,
+      2.4,
+      9
+     ],
+     "intensity": 1,
+     "range": 12,
+     "innerAngle": 25,
+     "outerAngle": 35
+    },
+    {
+     "type": "Orbit",
+     "radius": 5.5,
+     "speed": 0.5,
+     "phase": 4.18879,
+     "bobAmp": 0.6,
+     "bobSpeed": 1.7,
+     "height": 1.4
+    }
+   ]
+  },
+  {
+   "name": "MainCamera",
+   "guid": "09ab61ff4d224c99b58ba6affd638396",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2,
+    3.2,
+    9.5
+   ],
+   "rotation": [
+    -0.0966855,
+    -0.604224,
+    -0.0741894,
+    0.78744
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Camera",
+     "fov": 55,
+     "near": 0.1,
+     "far": 300,
+     "isDefault": false
+    },
+    {
+     "type": "CameraController",
+     "moveSpeed": 4.5,
+     "sprintSpeed": 14,
+     "lookSens": 0.18,
+     "yaw": -75,
+     "pitch": -14
+    }
+   ]
+  },
+  {
+   "name": "FollowCam",
+   "guid": "e156d39e76de42d0beb4c20022260151",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -2,
+    6.5443,
+    16.1887
+   ],
+   "rotation": [
+    -0.154497,
+    0,
+    0,
+    0.987993
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Camera",
+     "fov": 55,
+     "near": 0.1,
+     "far": 300,
+     "isDefault": false
+    },
+    {
+     "type": "FollowCamera",
+     "targetGuid": "09ab61ff4d224c99b58ba6affd638396",
+     "targetName": "MainCamera",
+     "offset": [
+      0,
+      3.5,
+      7
+     ],
+     "lookHeight": 1.2,
+     "smoothing": 5
+    }
+   ]
+  },
+  {
+   "name": "ThirdPersonCam",
+   "guid": "fd668dc0e23e41a18f39e6c0aab63905",
+   "parent": -1,
+   "active": true,
+   "position": [
+    6.77663,
+    2.03165,
+    5.73818
+   ],
+   "rotation": [
+    -0.0856247,
+    0.570434,
+    0.0599551,
+    0.814665
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Camera",
+     "fov": 55,
+     "near": 0.1,
+     "far": 300,
+     "isDefault": true
+    },
+    {
+     "type": "ThirdPersonCamera",
+     "targetGuid": "b1e8a1ad99564876a9062828df81bb0f",
+     "targetName": "Player",
+     "distance": 3.2,
+     "lookHeight": 1.0,
+     "yaw": -160,
+     "pitch": -12
+    }
+   ]
+  },
+  {
+   "name": "Crystal",
+   "guid": "0b1e0000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    10.0,
+    0.02,
+    -0.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Model",
+     "path": "assets/props/crystal.obj",
+     "animate": false
+    }
+   ]
+  },
+  {
+   "name": "FbxCube",
+   "guid": "0b1e0000000000000000000000000002",
+   "parent": -1,
+   "active": true,
+   "position": [
+    11.5,
+    0.55,
+    1.4
+   ],
+   "rotation": [
+    0,
+    0.3826834,
+    0,
+    0.9238795
+   ],
+   "scale": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "components": [
+    {
+     "type": "Model",
+     "path": "assets/props/test_cube.fbx",
+     "animate": false
+    }
+   ]
+  },
+  {
+   "name": "PatrolWall",
+   "guid": "aa100000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -9.5,
+    0.75,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    5.0,
+    1.5,
+    0.8
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "tile",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.6,
+       0.62,
+       0.68,
+       1
+      ],
+      "metallic": 0.05,
+      "roughness": 0.7,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "radius": 0.5,
+     "height": 2,
+     "center": [
+      0,
+      0,
+      0
+     ],
+     "isTrigger": false
+    }
+   ]
+  },
+  {
+   "name": "Guard",
+   "guid": "aa100000000000000000000000000002",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -10.5,
+    0.55,
+    -5.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.55,
+    1.1,
+    0.55
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "",
+     "castShadow": true,
+     "material": {
+      "baseColor": [
+       0.95,
+       0.45,
+       0.1,
+       1
+      ],
+      "metallic": 0.05,
+      "roughness": 0.4,
+      "emissive": [
+       0,
+       0,
+       0
+      ],
+      "uvScale": 1,
+      "normalScale": 1,
+      "occlusionStrength": 1,
+      "alphaCutoff": -1,
+      "doubleSided": false,
+      "blend": false,
+      "graph": "",
+      "subsurface": 0,
+      "sssCurvature": 0,
+      "translucency": 0,
+      "sssTint": [
+       1,
+       0.3,
+       0.2
+      ]
+     }
+    },
+    {
+     "type": "NavAgent",
+     "speed": 2.5,
+     "acceptance": 0.4,
+     "repathInterval": 1.0,
+     "faceMoveDir": true
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/guard.json"
+    }
+   ]
+  }
+ ]
+}

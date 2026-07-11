@@ -1,0 +1,18 @@
+{
+  "scriptGraph": 2,
+  "variables": [
+  ],
+  "nodes": [
+    { "id": "start", "type": "OnStart", "exec": ["wait1"], "in": [], "x": 40, "y": 80 },
+    { "id": "wait1", "type": "Delay", "exec": ["log_cut"], "in": [{ "t": "Float", "f": 2 }], "x": 260, "y": 80 },
+    { "id": "log_cut", "type": "Log", "exec": ["cut"], "in": [{ "t": "String", "s": "intro: cutting to DialogueCamWide" }], "x": 480, "y": 80 },
+    { "id": "cut", "type": "RequestCamera", "p": "DialogueCamWide", "exec": ["wait2"], "in": [{ "t": "Float", "f": 1 }], "x": 700, "y": 80 },
+    { "id": "wait2", "type": "Delay", "exec": ["release"], "in": [{ "t": "Float", "f": 2.5 }], "x": 920, "y": 80 },
+    { "id": "release", "type": "RequestCamera", "exec": ["flag"], "in": [{ "t": "Float", "f": 1 }], "x": 1140, "y": 80 },
+    { "id": "flag", "type": "SetFlag", "p": "script_intro_done", "exec": ["log_done"], "in": [{ "t": "Float", "f": 1 }], "x": 1360, "y": 80 },
+    { "id": "log_done", "type": "Log", "exec": [""], "in": [{ "t": "String", "s": "intro: sequence complete" }], "x": 1580, "y": 80 },
+    { "id": "on_flag", "type": "OnFlag", "p": "script_intro_done", "n": 1, "exec": ["log_flag"], "in": [], "x": 40, "y": 280 },
+    { "id": "log_flag", "type": "Log", "exec": ["chime"], "in": [{ "t": "String", "s": "intro: flag observed by second event chain" }], "x": 260, "y": 280 },
+    { "id": "chime", "type": "PlaySound", "p": "assets/audio/ambient.wav", "exec": [""], "in": [{ "t": "Float", "f": 0.5 }], "x": 480, "y": 280 }
+  ]
+}

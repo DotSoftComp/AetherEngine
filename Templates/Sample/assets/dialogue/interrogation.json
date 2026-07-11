@@ -1,0 +1,16 @@
+{
+  "name": "Interrogation",
+  "start": "intro",
+  "nodes": [
+    { "id": "intro", "type": "line", "camera": "DialogueCamCloseup", "cameraBlend": 0, "pos": [40, 200], "speaker": "CONNOR", "text": "Stay calm. Focus on the interrogation.", "duration": 2, "next": "choice1" },
+    { "id": "choice1", "type": "choice", "camera": "DialogueCamWide", "cameraBlend": 0.6, "pos": [310, 180], "timeLimit": 6, "timeoutTarget": "silence", "options": [{ "text": "Stay calm", "target": "qte_tap" }, { "text": "Push back", "target": "qte_seq" }, { "text": "Say nothing", "target": "silence" }] },
+    { "id": "qte_tap", "type": "qte", "camera": "DialogueCamCloseup", "cameraBlend": 0.25, "pos": [590, 60], "qteType": "tap", "keys": ["F"], "duration": 1.4, "holdSeconds": 0.6, "mashCount": 8, "success": "good_line", "fail": "bad_line" },
+    { "id": "qte_seq", "type": "qte", "camera": "DialogueCamCloseup", "cameraBlend": 0.25, "pos": [590, 240], "qteType": "sequence", "keys": ["W", "A", "S", "D"], "duration": 1.3, "holdSeconds": 0.6, "mashCount": 8, "success": "good_line", "fail": "bad_line" },
+    { "id": "silence", "type": "line", "camera": "DialogueCamWide", "cameraBlend": 0.4, "setFlag": "interrogation_result", "flagValue": 0, "pos": [590, 430], "speaker": "", "text": "...", "duration": 1.2, "next": "end_silence" },
+    { "id": "good_line", "type": "line", "camera": "DialogueCamCloseup", "cameraBlend": 0.4, "setFlag": "interrogation_result", "flagValue": 2, "pos": [870, 120], "speaker": "CONNOR", "text": "That worked.", "duration": 1.4, "next": "end_good" },
+    { "id": "bad_line", "type": "line", "camera": "DialogueCamCloseup", "cameraBlend": 0.4, "setFlag": "interrogation_result", "flagValue": 1, "pos": [870, 300], "speaker": "CONNOR", "text": "That didn't go well.", "duration": 1.4, "next": "end_bad" },
+    { "id": "end_good", "type": "end", "setFlag": "interrogation_done", "flagValue": 1, "pos": [1150, 120] },
+    { "id": "end_bad", "type": "end", "setFlag": "interrogation_done", "flagValue": 1, "pos": [1150, 300] },
+    { "id": "end_silence", "type": "end", "setFlag": "interrogation_done", "flagValue": 1, "pos": [870, 470] }
+  ]
+}

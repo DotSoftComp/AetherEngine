@@ -1,0 +1,8 @@
+newmtl stone
+Kd 0.35 0.34 0.38
+Ns 12
+
+newmtl crystal
+Kd 0.45 0.9 0.85
+Ke 0.1 0.9 0.8
+Ns 900

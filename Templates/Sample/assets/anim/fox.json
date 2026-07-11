@@ -1,0 +1,18 @@
+{
+  "animGraph": 1,
+  "start": "idle",
+  "parameters": [
+    { "name": "Speed", "value": 0 }
+  ],
+  "states": [
+    { "id": "idle", "clip": "Survey", "speed": 1, "loop": true, "x": 60, "y": 140 },
+    { "id": "walk", "clip": "Walk", "speed": 1, "loop": true, "x": 320, "y": 60 },
+    { "id": "run", "clip": "Run", "speed": 1, "loop": true, "x": 580, "y": 140 }
+  ],
+  "transitions": [
+    { "from": "idle", "to": "walk", "param": "Speed", "op": ">", "value": 0.2, "blend": 0.25 },
+    { "from": "walk", "to": "idle", "param": "Speed", "op": "<=", "value": 0.2, "blend": 0.25 },
+    { "from": "walk", "to": "run", "param": "Speed", "op": ">", "value": 3.2, "blend": 0.2 },
+    { "from": "run", "to": "walk", "param": "Speed", "op": "<=", "value": 3.2, "blend": 0.2 }
+  ]
+}

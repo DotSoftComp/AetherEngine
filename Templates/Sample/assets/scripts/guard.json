@@ -1,0 +1,241 @@
+{
+ "scriptGraph": 2,
+ "variables": [
+  {
+   "name": "atB",
+   "t": "Float",
+   "f": 0
+  }
+ ],
+ "nodes": [
+  {
+   "id": "st",
+   "type": "OnStart",
+   "exec": [
+    "mv0"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 40
+  },
+  {
+   "id": "mv0",
+   "type": "AIMoveTo",
+   "exec": [
+    "set0"
+   ],
+   "in": [
+    {
+     "from": "self",
+     "out": 0
+    },
+    {
+     "t": "Vec3",
+     "v": [
+      -10.5,
+      0.1,
+      5.5
+     ]
+    }
+   ],
+   "x": 220,
+   "y": 40
+  },
+  {
+   "id": "set0",
+   "type": "SetVar",
+   "p": "atB",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "t": "Float",
+     "f": 1
+    }
+   ],
+   "x": 420,
+   "y": 40
+  },
+  {
+   "id": "self",
+   "type": "Self",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 420
+  },
+  {
+   "id": "arr",
+   "type": "AIArrived",
+   "exec": [],
+   "in": [
+    {
+     "from": "self",
+     "out": 0
+    }
+   ],
+   "x": 220,
+   "y": 420
+  },
+  {
+   "id": "vAtB",
+   "type": "GetVar",
+   "p": "atB",
+   "exec": [],
+   "in": [],
+   "x": 220,
+   "y": 520
+  },
+  {
+   "id": "upd",
+   "type": "OnUpdate",
+   "exec": [
+    "chk"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 200
+  },
+  {
+   "id": "chk",
+   "type": "If",
+   "exec": [
+    "dir",
+    ""
+   ],
+   "in": [
+    {
+     "from": "arr",
+     "out": 0
+    }
+   ],
+   "x": 220,
+   "y": 200
+  },
+  {
+   "id": "dir",
+   "type": "If",
+   "exec": [
+    "logB",
+    "logA"
+   ],
+   "in": [
+    {
+     "from": "vAtB",
+     "out": 0
+    }
+   ],
+   "x": 400,
+   "y": 200
+  },
+  {
+   "id": "logB",
+   "type": "Log",
+   "exec": [
+    "mvA"
+   ],
+   "in": [
+    {
+     "t": "String",
+     "s": "Guard reached B, heading to A"
+    }
+   ],
+   "x": 580,
+   "y": 140
+  },
+  {
+   "id": "mvA",
+   "type": "AIMoveTo",
+   "exec": [
+    "setA"
+   ],
+   "in": [
+    {
+     "from": "self",
+     "out": 0
+    },
+    {
+     "t": "Vec3",
+     "v": [
+      -10.5,
+      0.1,
+      -5.5
+     ]
+    }
+   ],
+   "x": 780,
+   "y": 140
+  },
+  {
+   "id": "setA",
+   "type": "SetVar",
+   "p": "atB",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "t": "Float",
+     "f": 0
+    }
+   ],
+   "x": 980,
+   "y": 140
+  },
+  {
+   "id": "logA",
+   "type": "Log",
+   "exec": [
+    "mvB"
+   ],
+   "in": [
+    {
+     "t": "String",
+     "s": "Guard reached A, heading to B"
+    }
+   ],
+   "x": 580,
+   "y": 280
+  },
+  {
+   "id": "mvB",
+   "type": "AIMoveTo",
+   "exec": [
+    "setB"
+   ],
+   "in": [
+    {
+     "from": "self",
+     "out": 0
+    },
+    {
+     "t": "Vec3",
+     "v": [
+      -10.5,
+      0.1,
+      5.5
+     ]
+    }
+   ],
+   "x": 780,
+   "y": 280
+  },
+  {
+   "id": "setB",
+   "type": "SetVar",
+   "p": "atB",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "t": "Float",
+     "f": 1
+    }
+   ],
+   "x": 980,
+   "y": 280
+  }
+ ]
+}

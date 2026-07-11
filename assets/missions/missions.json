@@ -1,0 +1,10 @@
+{
+  "player": "MainCamera",
+  "missions": [
+    { "id": "first_case", "name": "The Interrogation", "description": "Approach the suspect and get a confession.dfghjgfdvbnhgfvbvg", "autoStart": true, "sequential": true,
+      "objectives": [
+        { "id": "reach_marker", "text": "Approach the interrogation markervbngv bgf", "type": "reach", "target": "Fox", "radius": 1 },
+        { "id": "finish_interrogation", "text": "Finish the interrogation", "type": "flag", "flag": "interrogation_done", "value": 1 }
+      ] }
+  ]
+}
