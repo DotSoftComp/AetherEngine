@@ -43,6 +43,17 @@ bool readSdkPaths(SdkPaths& out, const std::function<void(const std::string&)>& 
         onLine("[Module] engine.json lacks sdkInclude/sdkLib");
         return false;
     }
+    // Packaged installs ship the SDK inside the install and reference it with
+    // relative paths ("SDK/include") so the install stays relocatable; dev
+    // builds write absolute paths. Anchor relative ones to the install dir.
+    auto anchor = [](std::string& p) {
+        bool absolute = (p.size() > 1 && p[1] == ':') ||
+                        (p.size() > 1 && (p[0] == '\\' || p[0] == '/') &&
+                         (p[1] == '\\' || p[1] == '/'));
+        if (!absolute) p = joinPath(engineBinDir(), p);
+    };
+    anchor(out.include);
+    anchor(out.lib);
     return true;
 }
 

@@ -1,0 +1,20 @@
+{
+ "columns": [
+  "value",
+  "label"
+ ],
+ "rows": {
+  "ammo_capacity": {
+   "value": 12,
+   "label": "Magazine size"
+  },
+  "fire_range": {
+   "value": 100,
+   "label": "Hitscan range (m)"
+  },
+  "hit_radius": {
+   "value": 1.2,
+   "label": "Hit test radius around a target's center (m)"
+  }
+ }
+}

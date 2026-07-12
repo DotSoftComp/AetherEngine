@@ -31,6 +31,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     PulseClient client;
+    // Load the user config first (bridge port/token for persona bridge calls),
+    // then override the backend with the CLI args — same shape as the panel.
+    client.config = PulseConfig::load();
     client.config.baseUrl = argv[1];
     client.config.apiKey = argv[2];
 
@@ -45,7 +48,7 @@ int main(int argc, char** argv) {
     team.init(&client, argv[3]);
 
     team.requestPlans("add collectible coins with a HUD counter");
-    if (!waitIdle(team, 120)) {
+    if (!waitIdle(team, 1200)) { // generous: local models take minutes per call
         std::printf("[AiSmoke] plan job timed out -> FAIL\n");
         return 1;
     }
@@ -62,7 +65,7 @@ int main(int argc, char** argv) {
     std::printf("[AiSmoke] planner RAG citations: %s\n", ragUsed ? "yes" : "NO");
 
     team.generate(0);
-    if (!waitIdle(team, 240)) {
+    if (!waitIdle(team, 2400)) {
         std::printf("[AiSmoke] generate job timed out -> FAIL\n");
         return 1;
     }
@@ -92,6 +95,43 @@ int main(int argc, char** argv) {
             std::printf("[AiSmoke] applied file missing: %s -> FAIL\n", p.path.c_str());
             return 1;
         }
+    }
+
+    // Multi-turn refinement: feedback goes into the specialist's SAME session;
+    // the revised file must replace the old proposal (by path) and be valid.
+    team.refine("The data table is malformed JSON - fix it");
+    if (!waitIdle(team, 1200)) {
+        std::printf("[AiSmoke] refine job timed out -> FAIL\n");
+        return 1;
+    }
+    bool revisedValid = false;
+    for (const auto& p : team.proposals())
+        if (p.path == "assets/data/broken.json") revisedValid = p.jsonValid && !p.applied;
+    std::printf("[AiSmoke] refinement revised the invalid file: %s\n",
+                revisedValid ? "yes" : "NO");
+    if (!revisedValid) return 1;
+    for (size_t i = 0; i < team.proposals().size(); ++i)
+        if (team.proposals()[i].path == "assets/data/broken.json") {
+            std::string aerr;
+            if (!team.applyProposal(i, &aerr)) {
+                std::printf("[AiSmoke] revised file failed to apply: %s -> FAIL\n", aerr.c_str());
+                return 1;
+            }
+        }
+
+    // Personas may request live-editor bridge calls; without an editor running
+    // they must fail gracefully (unreachable), never crash or hang.
+    auto calls = team.bridgeCalls();
+    std::printf("[AiSmoke] bridge calls requested: %d\n", (int)calls.size());
+    if (!calls.empty()) {
+        team.runBridgeCalls();
+        if (!waitIdle(team, 120)) {
+            std::printf("[AiSmoke] bridge-call job timed out -> FAIL\n");
+            return 1;
+        }
+        for (const auto& c : team.bridgeCalls())
+            std::printf("[AiSmoke]   %s -> %s\n", c.method.c_str(),
+                        c.ok ? "ok" : c.result.substr(0, 60).c_str());
     }
 
     std::printf("[AiSmoke] ALL PASS\n");

@@ -1,0 +1,58 @@
+{
+ "scriptGraph": 2,
+ "variables": [],
+ "nodes": [
+  {
+   "id": "start",
+   "type": "OnStart",
+   "exec": [
+    "hello"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 40
+  },
+  {
+   "id": "hello",
+   "type": "Log",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "t": "String",
+     "s": "[FPS] Clear the Arena: destroy all 6 glowing targets"
+    }
+   ],
+   "x": 240,
+   "y": 40
+  },
+  {
+   "id": "win",
+   "type": "OnFlag",
+   "exec": [
+    "winLog"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 200,
+   "p": "kills",
+   "n": 6
+  },
+  {
+   "id": "winLog",
+   "type": "Log",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "t": "String",
+     "s": "[FPS] ALL TARGETS DESTROYED \u2014 arena clear!"
+    }
+   ],
+   "x": 240,
+   "y": 200
+  }
+ ]
+}

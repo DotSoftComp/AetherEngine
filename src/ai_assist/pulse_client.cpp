@@ -54,6 +54,11 @@ PulseConfig PulseConfig::load() {
     if (!jsonParse(text.c_str(), text.size(), doc)) return cfg;
     if (const std::string* s = doc.string("baseUrl")) cfg.baseUrl = *s;
     if (const std::string* s = doc.string("apiKey")) cfg.apiKey = *s;
+    cfg.timeoutSeconds = doc.integer("timeoutSeconds", cfg.timeoutSeconds);
+    if (cfg.timeoutSeconds < 30) cfg.timeoutSeconds = 30;
+    cfg.bridgeEnabled = doc.flag("bridgeEnabled", cfg.bridgeEnabled);
+    cfg.bridgePort = doc.integer("bridgePort", cfg.bridgePort);
+    if (const std::string* s = doc.string("bridgeToken")) cfg.bridgeToken = *s;
     return cfg;
 }
 
@@ -61,7 +66,10 @@ bool PulseConfig::save() const {
     std::ofstream f(pulseConfigPath(), std::ios::binary);
     if (!f) return false;
     f << "{\n  \"baseUrl\": \"" << pulseJsonEscape(baseUrl) << "\",\n  \"apiKey\": \""
-      << pulseJsonEscape(apiKey) << "\"\n}\n";
+      << pulseJsonEscape(apiKey) << "\",\n  \"timeoutSeconds\": " << timeoutSeconds
+      << ",\n  \"bridgeEnabled\": "
+      << (bridgeEnabled ? "true" : "false") << ",\n  \"bridgePort\": " << bridgePort
+      << ",\n  \"bridgeToken\": \"" << pulseJsonEscape(bridgeToken) << "\"\n}\n";
     return f.good();
 }
 
@@ -70,6 +78,14 @@ bool PulseConfig::save() const {
 static std::vector<HttpHeader> authHeaders(const PulseConfig& cfg) {
     return {{"x-api-key", cfg.apiKey}};
 }
+
+// Three timeout classes: generation waits on the model (configurable — local
+// models are slow), CRUD is server-side bookkeeping, probes just ask "up?".
+static int generationTimeoutMs(const PulseConfig& cfg) {
+    return (cfg.timeoutSeconds < 30 ? 30 : cfg.timeoutSeconds) * 1000;
+}
+constexpr int kCrudTimeoutMs = 60000;
+constexpr int kProbeTimeoutMs = 8000;
 
 static bool parseBody(const HttpResponse& r, JsonValue& out, std::string* error) {
     if (r.status == 0) {
@@ -96,14 +112,16 @@ bool PulseClient::online(std::string* error) {
         if (error) *error = "no API key configured";
         return false;
     }
-    HttpResponse r = httpGet(config.baseUrl + "/v1/agents", authHeaders(config));
+    HttpResponse r = httpGet(config.baseUrl + "/v1/agents", authHeaders(config),
+                             kProbeTimeoutMs);
     JsonValue doc;
     return parseBody(r, doc, error);
 }
 
 std::vector<PulseAgent> PulseClient::listAgents(std::string* error) {
     std::vector<PulseAgent> out;
-    HttpResponse r = httpGet(config.baseUrl + "/v1/agents", authHeaders(config));
+    HttpResponse r = httpGet(config.baseUrl + "/v1/agents", authHeaders(config),
+                             kCrudTimeoutMs);
     JsonValue doc;
     if (!parseBody(r, doc, error)) return out;
     const JsonValue* arr = doc.find("agents");
@@ -128,7 +146,8 @@ std::string PulseClient::createAgent(const std::string& name, const std::string&
       << "\",\"personality\":\"" << pulseJsonEscape(personality) << "\",\"mission\":\""
       << pulseJsonEscape(mission) << "\",\"decisionStyle\":\"" << pulseJsonEscape(decisionStyle)
       << "\",\"systemPrompt\":\"" << pulseJsonEscape(systemPrompt) << "\"}";
-    HttpResponse r = httpPost(config.baseUrl + "/v1/agents", b.str(), authHeaders(config));
+    HttpResponse r = httpPost(config.baseUrl + "/v1/agents", b.str(), authHeaders(config),
+                              kCrudTimeoutMs);
     JsonValue doc;
     if (!parseBody(r, doc, error)) return "";
     if (const JsonValue* agent = doc.find("agent"))
@@ -162,7 +181,7 @@ PulseChatResult PulseClient::chat(const std::string& agentId, const std::string&
       << ",\"temperature\":" << opt.temperature << ",\"maxTokens\":" << opt.maxTokens << "}}";
 
     HttpResponse r = httpPost(config.baseUrl + "/v1/agents/" + agentId + "/chat", b.str(),
-                              authHeaders(config));
+                              authHeaders(config), generationTimeoutMs(config));
     JsonValue doc;
     if (!parseBody(r, doc, &res.error)) return res;
 
@@ -214,8 +233,9 @@ std::string PulseClient::ingestKnowledge(const std::string& name, const std::str
     // The docs are reference material: chunk + embed, but skip the fact/QA
     // passes (slow, and reference tables aren't "facts" to contradict).
     b << ",\"extractFacts\":false,\"generateQa\":false}";
+    // Ingestion chunks + embeds server-side — generation-class, not CRUD.
     HttpResponse r = httpPost(config.baseUrl + "/v1/knowledge-sources", b.str(),
-                              authHeaders(config));
+                              authHeaders(config), generationTimeoutMs(config));
     JsonValue doc;
     if (!parseBody(r, doc, error)) return "";
     if (const std::string* id = doc.string("id")) return *id;
@@ -231,7 +251,8 @@ PulseChatResult PulseClient::complete(const std::string& systemPrompt,
     b << "{\"systemPrompt\":\"" << pulseJsonEscape(systemPrompt)
       << "\",\"messages\":[{\"role\":\"user\",\"content\":\"" << pulseJsonEscape(userMessage)
       << "\"}],\"json\":" << (json ? "true" : "false") << ",\"max_tokens\":" << maxTokens << "}";
-    HttpResponse r = httpPost(config.baseUrl + "/v1/ai/complete", b.str(), authHeaders(config));
+    HttpResponse r = httpPost(config.baseUrl + "/v1/ai/complete", b.str(), authHeaders(config),
+                              generationTimeoutMs(config));
     JsonValue doc;
     if (!parseBody(r, doc, &res.error)) return res;
     res.ok = true;

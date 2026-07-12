@@ -1,4 +1,5 @@
 #include "doc_gen.h"
+#include "agent_bridge_help.h"
 #include "component_registry.h"
 #include "engine_modules.h"
 #include "entity.h"
@@ -164,6 +165,45 @@ bool writeScriptNodesDoc(const std::string& path) {
     return f.good();
 }
 
+bool writeAgentBridgeDoc(const std::string& path) {
+    std::ostringstream o;
+    o << "# Agent bridge — driving a LIVE editor\n\n"
+      << "GENERATED (AetherDocGen) - do not edit. Method list comes from the same\n"
+      << "source the running editor serves via `bridge.help`.\n\n"
+      << "While the Aether editor is open it hosts a control server on\n"
+      << "`http://127.0.0.1:3052` (port = `bridgePort` in\n"
+      << "`%APPDATA%/AetherEngine/pulse.json`). It gives full control of the live\n"
+      << "editor: spawn and modify entities, start/stop Play, read logs, capture\n"
+      << "viewport screenshots, trigger C++ compiles and navmesh bakes.\n\n"
+      << "**Access is PulseLABS-gated**: every request must send the `bridgeToken`\n"
+      << "from that same `pulse.json` as an `x-aether-token` header. Headless runs\n"
+      << "(`--frames`, `--screenshot`, `--resave`) need no editor and no token —\n"
+      << "prefer them when no editor is open; prefer the bridge when one is, so\n"
+      << "changes are verified against the live session.\n\n"
+      << "## Protocol\n\n"
+      << "- `GET /health` — liveness probe, no auth: is an editor running?\n"
+      << "- `POST /rpc` — body `{ \"method\": \"...\", \"params\": { ... } }`,\n"
+      << "  returns `{ \"ok\": true, \"result\": ... }` or `{ \"ok\": false, \"error\": \"...\" }`.\n\n"
+      << "```\n"
+      << "curl -s -X POST http://127.0.0.1:3052/rpc -H \"x-aether-token: <bridgeToken>\" \\\n"
+      << "  -d '{\"method\":\"entity.spawn\",\"params\":{\"kind\":\"cube\",\"name\":\"Crate\",\"position\":[0,2,0]}}'\n"
+      << "```\n\n"
+      << "Typical verification loop: `status` -> mutate (`entity.spawn`,\n"
+      << "`component.set`) -> `viewport.screenshot` -> `play.start` -> `logs.get`\n"
+      << "(grep `[Script]`) -> `play.stop`. Entity selectors accept `guid`, `name`,\n"
+      << "or `id`; component fields use the exact JSON keys from\n"
+      << "`reference/components.md`.\n\n"
+      << "## Method reference (verbatim `bridge.help`)\n\n"
+      << "```json\n"
+      << agentBridgeHelpJson() << "\n"
+      << "```\n";
+
+    std::ofstream f(path, std::ios::binary);
+    if (!f) return false;
+    f << o.str();
+    return f.good();
+}
+
 } // namespace
 
 bool generateReferenceDocs(const std::string& docsDir) {
@@ -173,6 +213,7 @@ bool generateReferenceDocs(const std::string& docsDir) {
 
     bool ok = writeComponentsDoc(refDir + "\\components.md");
     ok = writeScriptNodesDoc(refDir + "\\script-nodes.md") && ok;
+    ok = writeAgentBridgeDoc(refDir + "\\agent-bridge.md") && ok;
     if (ok) AE_LOG("[Docs] reference generated in %s", refDir.c_str());
     else AE_ERROR("[Docs] reference generation failed (%s)", refDir.c_str());
     return ok;

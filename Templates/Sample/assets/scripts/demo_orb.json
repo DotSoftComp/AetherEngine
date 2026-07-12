@@ -1,0 +1,68 @@
+{
+ "scriptGraph": 2,
+ "variables": [],
+ "nodes": [
+  {
+   "id": "st",
+   "type": "OnStart",
+   "exec": [
+    "l1"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 40
+  },
+  {
+   "id": "l1",
+   "type": "Log",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "t": "String",
+     "s": "demo: the orb is alive"
+    }
+   ],
+   "x": 240,
+   "y": 40
+  },
+  {
+   "id": "up",
+   "type": "OnUpdate",
+   "exec": [
+    "spin"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 160
+  },
+  {
+   "id": "me",
+   "type": "Self",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 280
+  },
+  {
+   "id": "spin",
+   "type": "RotateYaw",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "from": "me",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 120
+    }
+   ],
+   "x": 240,
+   "y": 160
+  }
+ ]
+}

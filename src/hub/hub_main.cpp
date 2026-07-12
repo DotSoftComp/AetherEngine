@@ -3,6 +3,7 @@
 // project in the matching engine version's editor. Epic-launcher-style, but
 // small: one ImGui window over launcher.json (%APPDATA%/AetherEngine).
 #include "launcher_state.h"
+#include "engine_update.h"
 #include "../core/log.h"
 #include "../core/json.h"
 #include "../core/paths.h"
@@ -13,6 +14,7 @@
 #include "../editor/imgui_layer.h"
 #include "imgui.h"
 #include <commdlg.h>
+#include <shellapi.h>
 #include <algorithm>
 #include <cstdio>
 #include <ctime>
@@ -61,12 +63,22 @@ std::string whenText(long long unixSecs) {
 struct HubUI {
     LauncherState state;
     std::string selfVersion;
+    EngineUpdater updater;
+    bool quit = false; // set when restarting into a freshly installed hub
     // New Project form
     char newName[128] = "MyGame";
     char newLocation[260] = {};
     std::vector<std::string> templates; // template dir names
     int templateIndex = 0;
     std::string lastError;
+
+    // Newest engine version on this machine — what a release must beat.
+    std::string newestInstalledVersion() const {
+        std::string best = selfVersion;
+        for (const EngineInstall& e : state.engines)
+            if (compareEngineVersions(e.version, best) > 0) best = e.version;
+        return best;
+    }
 
     void openProject(KnownProject& p) {
         bool exact = false;
@@ -201,7 +213,90 @@ struct HubUI {
         }
     }
 
+    void drawUpdatesSection() {
+        ImGui::SeparatorText("Updates");
+        switch (updater.phase()) {
+        case EngineUpdater::Phase::Idle:
+        case EngineUpdater::Phase::CheckFailed:
+            if (ImGui::Button("Check for updates"))
+                updater.checkForUpdate(newestInstalledVersion());
+            if (updater.phase() == EngineUpdater::Phase::CheckFailed) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("couldn't reach GitHub — offline or rate-limited");
+            }
+            break;
+        case EngineUpdater::Phase::Checking:
+            ImGui::TextDisabled("Checking for updates...");
+            break;
+        case EngineUpdater::Phase::UpToDate:
+            ImGui::Text("Engine is up to date (%s).", newestInstalledVersion().c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Check again"))
+                updater.checkForUpdate(newestInstalledVersion());
+            break;
+        case EngineUpdater::Phase::UpdateAvailable: {
+            ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.55f, 1.0f), "Aether %s is available.",
+                               updater.latestVersion().c_str());
+            if (ImGui::Button("Download and install")) updater.install();
+            std::string notes = updater.releaseNotesUrl();
+            if (!notes.empty()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Release notes"))
+                    ShellExecuteA(nullptr, "open", notes.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            }
+            ImGui::TextDisabled("Installs side by side — existing installs and projects are"
+                                " untouched.");
+            break;
+        }
+        case EngineUpdater::Phase::Downloading: {
+            double doneMb = (double)updater.downloadedBytes() / (1024.0 * 1024.0);
+            long long total = updater.totalBytes();
+            float frac = total > 0 ? (float)((double)updater.downloadedBytes() / (double)total)
+                                   : -1.0f * (float)ImGui::GetTime(); // indeterminate
+            char overlay[96];
+            if (total > 0)
+                std::snprintf(overlay, sizeof(overlay), "%.1f / %.1f MB", doneMb,
+                              (double)total / (1024.0 * 1024.0));
+            else
+                std::snprintf(overlay, sizeof(overlay), "%.1f MB", doneMb);
+            ImGui::Text("Downloading Aether %s", updater.latestVersion().c_str());
+            ImGui::ProgressBar(frac, ImVec2(360, 0), overlay);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Cancel")) updater.cancel();
+            break;
+        }
+        case EngineUpdater::Phase::Extracting:
+            ImGui::Text("Installing Aether %s", updater.latestVersion().c_str());
+            ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(360, 0), "extracting");
+            break;
+        case EngineUpdater::Phase::Installed: {
+            ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.55f, 1.0f), "Aether %s installed.",
+                               updater.latestVersion().c_str());
+            std::string newHub = joinPath(updater.installedPath(), "AetherHub.exe");
+            if (pathExists(newHub)) {
+                ImGui::SameLine();
+                if (ImGui::Button("Restart Hub in new version")) {
+                    if (launchDetached("\"" + newHub + "\"", updater.installedPath()))
+                        quit = true;
+                    else
+                        lastError = "Failed to launch " + newHub;
+                }
+            }
+            break;
+        }
+        case EngineUpdater::Phase::Failed:
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "Update failed: %s",
+                               updater.error().c_str());
+            if (ImGui::Button("Retry")) updater.install();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Check again"))
+                updater.checkForUpdate(newestInstalledVersion());
+            break;
+        }
+    }
+
     void drawEnginesTab(Window& window) {
+        drawUpdatesSection();
         ImGui::SeparatorText("Engine installs");
         if (ImGui::BeginTable("engines", 3,
                               ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
@@ -250,6 +345,12 @@ struct HubUI {
     }
 
     void draw(Window& window) {
+        // A finished install registers exactly once, even if the user never
+        // opens the Engines tab.
+        if (updater.takeInstalledEvent()) {
+            state.registerEngine(updater.installedPath(), updater.latestVersion());
+            state.save();
+        }
         const ImGuiViewport* vp = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(vp->WorkPos);
         ImGui::SetNextWindowSize(vp->WorkSize);
@@ -261,6 +362,12 @@ struct HubUI {
         ImGui::PopFont();
         ImGui::SameLine();
         ImGui::TextDisabled("engine %s", selfVersion.c_str());
+        if (updater.phase() == EngineUpdater::Phase::UpdateAvailable) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                               "— update %s available (Engines tab)",
+                               updater.latestVersion().c_str());
+        }
         if (ImGui::BeginTabBar("tabs")) {
             if (ImGui::BeginTabItem("Projects")) {
                 drawProjectsTab(window);
@@ -301,6 +408,9 @@ int main() {
     if (!hub.selfVersion.empty()) hub.state.registerEngine(engineBinDir(), hub.selfVersion);
     hub.state.save();
 
+    // Fire the update check once per launch — async, the UI never blocks on it.
+    hub.updater.checkForUpdate(hub.newestInstalledVersion());
+
     // Default project location + available templates.
     {
         char docs[MAX_PATH] = {};
@@ -324,7 +434,7 @@ int main() {
         }
     }
 
-    while (window.poll()) {
+    while (!hub.quit && window.poll()) {
         rhi::setViewport(0, 0, window.width(), window.height());
         rhi::clear(true, 0.045f, 0.045f, 0.055f, 1.0f, false);
         imguiBeginFrame();

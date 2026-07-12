@@ -400,6 +400,14 @@ void readBackbuffer(int width, int height, void* rgbaOut) {
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgbaOut);
 }
 
+void readFramebuffer(FramebufferHandle f, int width, int height, void* rgbaOut) {
+    // Only the READ binding moves, so cached draw-side state stays valid.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fboName(f));
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgbaOut);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+}
+
 // ---- vertex streams ---------------------------------------------------------------
 
 namespace {

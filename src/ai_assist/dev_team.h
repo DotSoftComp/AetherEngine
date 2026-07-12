@@ -23,6 +23,8 @@
 #pragma once
 #include "pulse_client.h"
 #include <atomic>
+#include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -62,9 +64,22 @@ public:
         std::string role;     // "planner" | "code" | "design"
         std::string title;    // display name
         std::string id;       // PulseLABS persona id
+        std::string sessionId; // multi-turn: refine() continues this conversation
         State state = State::Idle;
         std::string thoughts; // last reflection trace
         std::vector<std::string> citations; // knowledge chunks used (RAG)
+    };
+
+    // A live-editor call a persona asked for (agent bridge). Never executed
+    // silently: the panel shows them and the user runs them explicitly, same
+    // as file proposals.
+    struct BridgeCall {
+        std::string method;
+        std::string params; // JSON text
+        std::string result; // response body once run ("" = not run yet)
+        bool ran = false;
+        bool ok = false;
+        std::string agent;  // which persona requested it
     };
 
     ~DevTeam();
@@ -76,17 +91,29 @@ public:
     void requestPlans(const std::string& prompt);
     // Async: fan the chosen plan out to the specialists.
     void generate(int planIndex);
+    // Async: send developer feedback back into each specialist's SAME session;
+    // revised files replace proposals by path (and go back to un-applied).
+    void refine(const std::string& feedback);
+    // Async: execute the personas' pending agent-bridge calls against the
+    // live editor (localhost, token from pulse.json).
+    void runBridgeCalls();
 
     // Main-thread snapshots (copies under lock).
     std::vector<StageInfo> stages() const;
     std::vector<AgentSlot> agents() const;
     std::vector<Plan> plans() const;
     std::vector<Proposal> proposals() const;
+    std::vector<BridgeCall> bridgeCalls() const;
     std::vector<std::string> log() const;
     int selectedPlan() const { return selectedPlan_; }
 
     // Writes one proposal into the project (main thread; creates directories).
     bool applyProposal(size_t index, std::string* error);
+
+    // Fired (main thread, from applyProposal) when a C++ proposal lands —
+    // the editor hooks its script compile here so proposed code goes straight
+    // to a hot-reloaded DLL.
+    std::function<void(const std::string& path)> onCppApplied;
 
 private:
     void joinWorker();
@@ -94,9 +121,16 @@ private:
     void setAgent(const std::string& role, State st);
     void addLog(const std::string& line);
     bool ensureTeam();      // worker thread
-    bool ensureKnowledge(); // worker thread
+    // Worker thread: diffs Docs/**/*.md against what was already ingested
+    // (content hash per file, persisted in state.json) and ingests anything
+    // new or changed — the knowledge base follows the docs, every run.
+    bool ensureKnowledge();
     void planJob(std::string prompt);
     void generateJob(int planIndex);
+    void refineJob(std::string feedback);
+    void bridgeCallJob();
+    // One specialist turn: chat (in-session), absorb files + bridgeCalls.
+    bool specialistTurn(const std::string& role, const std::string& message);
     AgentSlot* slot(const std::string& role);
     void loadState();
     void saveState();
@@ -110,9 +144,10 @@ private:
     std::vector<AgentSlot> agents_;
     std::vector<Plan> plans_;
     std::vector<Proposal> proposals_;
+    std::vector<BridgeCall> bridgeCalls_;
     std::vector<std::string> log_;
     int selectedPlan_ = -1;
-    bool knowledgeReady_ = false;
+    std::map<std::string, std::string> knowledgeHashes_; // Docs relpath -> content hash
     std::string plannerSession_;
 
     std::thread worker_;

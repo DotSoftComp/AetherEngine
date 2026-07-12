@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <map>
 #include <random>
 #include <sstream>
 
@@ -854,6 +855,42 @@ bool loadScriptGraph(ScriptGraph& g, const std::string& path) {
                     path.c_str(), n.type.c_str(), n.id.c_str());
         }
         g.nodes.push_back(std::move(n));
+    }
+
+    // Link validation — a typo'd id would silently go nowhere. Every dangling
+    // exec/data link gets a loud file:node:pin message instead (agents grep
+    // for these; --verify fails on them).
+    std::map<std::string, const ScriptNode*> byId;
+    for (const ScriptNode& n : g.nodes)
+        if (!n.id.empty()) byId[n.id] = &n;
+    for (const ScriptNode& n : g.nodes) {
+        const NodeDef* def = scriptNodeDef(n.type);
+        for (size_t e = 0; e < n.execOut.size(); ++e) {
+            if (n.execOut[e].empty() || byId.count(n.execOut[e])) continue;
+            const char* pin = def && e < def->execOut.size() ? def->execOut[e].c_str() : "exec";
+            AE_WARN("[Script] %s: node '%s' (%s) exec pin %d ('%s') -> unknown node '%s'",
+                    path.c_str(), n.id.c_str(), n.type.c_str(), (int)e, pin,
+                    n.execOut[e].c_str());
+        }
+        for (size_t d = 0; d < n.in.size(); ++d) {
+            const DataIn& x = n.in[d];
+            if (x.fromNode.empty()) continue;
+            const char* pin = def && d < def->dataIn.size() ? def->dataIn[d].name.c_str() : "in";
+            auto src = byId.find(x.fromNode);
+            if (src == byId.end()) {
+                AE_WARN("[Script] %s: node '%s' (%s) input %d ('%s') <- unknown node '%s'",
+                        path.c_str(), n.id.c_str(), n.type.c_str(), (int)d, pin,
+                        x.fromNode.c_str());
+                continue;
+            }
+            if (const NodeDef* srcDef = scriptNodeDef(src->second->type))
+                if (x.fromOut < 0 || x.fromOut >= (int)srcDef->dataOut.size())
+                    AE_WARN("[Script] %s: node '%s' (%s) input %d ('%s') <- node '%s' output "
+                            "%d out of range (%s has %d outputs)",
+                            path.c_str(), n.id.c_str(), n.type.c_str(), (int)d, pin,
+                            x.fromNode.c_str(), x.fromOut, src->second->type.c_str(),
+                            (int)srcDef->dataOut.size());
+        }
     }
     return true;
 }

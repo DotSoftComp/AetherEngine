@@ -31,6 +31,11 @@ void AiPanel::init(const std::string& projectRoot) {
     std::snprintf(urlBuf_, sizeof(urlBuf_), "%s", client_.config.baseUrl.c_str());
     std::snprintf(keyBuf_, sizeof(keyBuf_), "%s", client_.config.apiKey.c_str());
     team_.init(&client_, projectRoot);
+    team_.onCppApplied = [this](const std::string& path) {
+        if (!onCompileScripts) return;
+        AE_LOG("[AI] C++ proposal applied (%s) — compiling scripts", path.c_str());
+        onCompileScripts();
+    };
     setupOpen_ = !client_.config.configured();
     initialized_ = true;
 }
@@ -67,11 +72,17 @@ void AiPanel::drawConnection() {
         ImGui::InputText("Backend URL", urlBuf_, sizeof(urlBuf_));
         ImGui::SetNextItemWidth(320);
         ImGui::InputText("API key", keyBuf_, sizeof(keyBuf_), ImGuiInputTextFlags_Password);
+        ImGui::SetNextItemWidth(320);
+        ImGui::InputInt("Request timeout (s)", &client_.config.timeoutSeconds, 30, 120);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("How long to wait on the model for one plan/generation call.\n"
+                              "Local models need generous values (default 600s = 10 min).");
         ImGui::TextDisabled("Self-hosted PulseLABS default: http://localhost:3051 - create a "
                             "key in its Developer Portal.");
         if (ImGui::Button("Save & test")) {
             client_.config.baseUrl = urlBuf_;
             client_.config.apiKey = keyBuf_;
+            if (client_.config.timeoutSeconds < 30) client_.config.timeoutSeconds = 30;
             client_.config.save();
             connError_.clear();
             connState_ = client_.online(&connError_) ? 2 : 3;
@@ -228,6 +239,50 @@ void AiPanel::drawProposals() {
             ImGui::EndChild();
         }
         ImGui::PopID();
+    }
+
+    // Multi-turn refinement: feedback goes back into the specialists' SAME
+    // sessions; revised files replace the proposals above.
+    ImGui::Spacing();
+    ImGui::SetNextItemWidth(-150);
+    bool sendFb = ImGui::InputTextWithHint("##feedback",
+                                           "Not quite right? Describe the changes...",
+                                           feedbackBuf_, sizeof(feedbackBuf_),
+                                           ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(team_.busy() || !feedbackBuf_[0]);
+    if (ImGui::Button("Request changes", ImVec2(140, 0)) || (sendFb && feedbackBuf_[0])) {
+        team_.refine(feedbackBuf_);
+        feedbackBuf_[0] = 0;
+    }
+    ImGui::EndDisabled();
+
+    // Live-editor calls the personas asked for — explicit, like everything.
+    std::vector<DevTeam::BridgeCall> calls = team_.bridgeCalls();
+    if (!calls.empty()) {
+        ImGui::SeparatorText("Requested live-editor calls (agent bridge)");
+        int pending = 0;
+        for (size_t i = 0; i < calls.size(); ++i) {
+            const DevTeam::BridgeCall& c = calls[i];
+            ImGui::PushID((int)(1000 + i));
+            ImGui::Bullet();
+            ImGui::SameLine();
+            ImGui::Text("%s", c.method.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("[by %s] %s", c.agent.c_str(),
+                                c.ran ? (c.ok ? "ok" : "FAILED") : "pending");
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("params: %s%s%s", c.params.c_str(),
+                                  c.ran ? "\nresult: " : "",
+                                  c.ran ? c.result.c_str() : "");
+            if (!c.ran) ++pending;
+            ImGui::PopID();
+        }
+        ImGui::BeginDisabled(team_.busy() || pending == 0);
+        char runLabel[64];
+        std::snprintf(runLabel, sizeof(runLabel), "Run %d call(s) on the live editor", pending);
+        if (ImGui::Button(runLabel)) team_.runBridgeCalls();
+        ImGui::EndDisabled();
     }
 }
 

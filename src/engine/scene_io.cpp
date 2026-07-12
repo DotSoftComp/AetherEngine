@@ -208,7 +208,9 @@ void readComponent(const JsonValue& j, Entity* e, AssetLibrary& assets) {
     if (!type) return;
     const ComponentDesc* desc = componentRegistry().find(*type);
     if (!desc) {
-        AE_WARN("[Scene] unknown component type '%s' skipped", type->c_str());
+        AE_WARN("[Scene] unknown component type '%s' on entity '%s' — skipped (typo, or its "
+                "module/plugin is disabled? see Docs/reference/components.md)",
+                type->c_str(), e->name().c_str());
         return;
     }
     Component* c = desc->create(*e);
@@ -432,10 +434,9 @@ Entity* duplicateEntity(World& world, AssetLibrary& assets, Entity* src) {
     return cloneRecursive(world, assets, src, src->parent(), src->name() + " Copy");
 }
 
-// ---- prefabs ----------------------------------------------------------------
+// ---- agent bridge / tooling ---------------------------------------------------
 
-bool saveEntityPrefab(const Entity& root, AssetLibrary& assets, const std::string& path) {
-    (void)assets;
+std::string serializeEntitySubtree(const Entity& root) {
     std::vector<Entity*> order;
     gatherSubtree(const_cast<Entity*>(&root), order);
     std::map<const Entity*, int> indexOf;
@@ -456,16 +457,46 @@ bool saveEntityPrefab(const Entity& root, AssetLibrary& assets, const std::strin
         o << (i + 1 < order.size() ? "," : "") << "\n";
     }
     o << "  ]\n}\n";
+    return o.str();
+}
 
+bool applyComponentJson(Entity& e, AssetLibrary& assets, const JsonValue& comp) {
+    const std::string* type = comp.string("type");
+    if (!type) return false;
+    const ComponentDesc* desc = componentRegistry().find(*type);
+    if (!desc) return false;
+    Component* target = nullptr;
+    for (const auto& c : e.components())
+        if (c->typeName() && *type == c->typeName()) {
+            target = c.get();
+            break;
+        }
+    if (!target) target = desc->create(e);
+    JsonReadVisitor v(comp, &e);
+    target->reflect(v);
+    target->onDeserialized(assets);
+    return true;
+}
+
+Entity* spawnEntitiesFromJson(World& world, AssetLibrary& assets, const JsonValue& entities,
+                              Entity* parent) {
+    if (entities.type != JsonValue::Array || entities.size() == 0) return nullptr;
+    std::vector<Entity*> spawned = spawnEntityArray(world, assets, entities, parent, true);
+    return spawned.empty() ? nullptr : spawned.front();
+}
+
+// ---- prefabs ----------------------------------------------------------------
+
+bool saveEntityPrefab(const Entity& root, AssetLibrary& assets, const std::string& path) {
+    (void)assets;
     std::ofstream f(path, std::ios::binary);
     if (!f) {
         AE_ERROR("[Prefab] cannot write %s", path.c_str());
         return false;
     }
-    std::string text = o.str();
+    std::string text = serializeEntitySubtree(root);
     f.write(text.data(), (std::streamsize)text.size());
-    AE_LOG("[Prefab] saved '%s' (%d entities) to %s", root.name().c_str(), (int)order.size(),
-           path.c_str());
+    AE_LOG("[Prefab] saved '%s' to %s", root.name().c_str(), path.c_str());
     return f.good();
 }
 

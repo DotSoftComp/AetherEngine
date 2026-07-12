@@ -1,0 +1,351 @@
+{
+ "scriptGraph": 2,
+ "variables": [
+  {
+   "name": "lastSeq",
+   "t": "Float",
+   "f": 0
+  }
+ ],
+ "nodes": [
+  {
+   "id": "tick",
+   "type": "OnUpdate",
+   "exec": [
+    "ifNew"
+   ],
+   "in": [],
+   "x": 40,
+   "y": 40
+  },
+  {
+   "id": "seq",
+   "type": "GetFlag",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 160,
+   "p": "shotSeq"
+  },
+  {
+   "id": "last",
+   "type": "GetVar",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 240,
+   "p": "lastSeq"
+  },
+  {
+   "id": "changed",
+   "type": "Compare",
+   "exec": [],
+   "in": [
+    {
+     "from": "seq",
+     "out": 0
+    },
+    {
+     "from": "last",
+     "out": 0
+    }
+   ],
+   "x": 220,
+   "y": 200,
+   "p": "!="
+  },
+  {
+   "id": "ifNew",
+   "type": "If",
+   "exec": [
+    "remember",
+    ""
+   ],
+   "in": [
+    {
+     "from": "changed",
+     "out": 0
+    }
+   ],
+   "x": 240,
+   "y": 40
+  },
+  {
+   "id": "remember",
+   "type": "SetVar",
+   "exec": [
+    "ifClose"
+   ],
+   "in": [
+    {
+     "from": "seq",
+     "out": 0
+    }
+   ],
+   "x": 440,
+   "y": 40,
+   "p": "lastSeq"
+  },
+  {
+   "id": "hx",
+   "type": "GetFlag",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 360,
+   "p": "hitX"
+  },
+  {
+   "id": "hy",
+   "type": "GetFlag",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 440,
+   "p": "hitY"
+  },
+  {
+   "id": "hz",
+   "type": "GetFlag",
+   "exec": [],
+   "in": [],
+   "x": 40,
+   "y": 520,
+   "p": "hitZ"
+  },
+  {
+   "id": "rx",
+   "type": "Divide",
+   "exec": [],
+   "in": [
+    {
+     "from": "hx",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 10
+    }
+   ],
+   "x": 220,
+   "y": 360
+  },
+  {
+   "id": "ry",
+   "type": "Divide",
+   "exec": [],
+   "in": [
+    {
+     "from": "hy",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 10
+    }
+   ],
+   "x": 220,
+   "y": 440
+  },
+  {
+   "id": "rz",
+   "type": "Divide",
+   "exec": [],
+   "in": [
+    {
+     "from": "hz",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 10
+    }
+   ],
+   "x": 220,
+   "y": 520
+  },
+  {
+   "id": "shot",
+   "type": "MakeVec3",
+   "exec": [],
+   "in": [
+    {
+     "from": "rx",
+     "out": 0
+    },
+    {
+     "from": "ry",
+     "out": 0
+    },
+    {
+     "from": "rz",
+     "out": 0
+    }
+   ],
+   "x": 400,
+   "y": 440
+  },
+  {
+   "id": "me",
+   "type": "Self",
+   "exec": [],
+   "in": [],
+   "x": 400,
+   "y": 340
+  },
+  {
+   "id": "myPos",
+   "type": "GetPosition",
+   "exec": [],
+   "in": [
+    {
+     "from": "me",
+     "out": 0
+    }
+   ],
+   "x": 580,
+   "y": 360
+  },
+  {
+   "id": "dist",
+   "type": "Distance",
+   "exec": [],
+   "in": [
+    {
+     "from": "myPos",
+     "out": 0
+    },
+    {
+     "from": "shot",
+     "out": 0
+    }
+   ],
+   "x": 760,
+   "y": 400
+  },
+  {
+   "id": "radius",
+   "type": "GetData",
+   "exec": [],
+   "in": [
+    {
+     "t": "String",
+     "s": "hit_radius"
+    },
+    {
+     "t": "String",
+     "s": "value"
+    }
+   ],
+   "x": 580,
+   "y": 520,
+   "p": "assets/data/weapons.json"
+  },
+  {
+   "id": "close",
+   "type": "Compare",
+   "exec": [],
+   "in": [
+    {
+     "from": "dist",
+     "out": 0
+    },
+    {
+     "from": "radius",
+     "out": 0
+    }
+   ],
+   "x": 940,
+   "y": 440,
+   "p": "<="
+  },
+  {
+   "id": "ifClose",
+   "type": "If",
+   "exec": [
+    "addKill",
+    ""
+   ],
+   "in": [
+    {
+     "from": "close",
+     "out": 0
+    }
+   ],
+   "x": 660,
+   "y": 40
+  },
+  {
+   "id": "kills",
+   "type": "GetFlag",
+   "exec": [],
+   "in": [],
+   "x": 660,
+   "y": 160,
+   "p": "kills"
+  },
+  {
+   "id": "plus1",
+   "type": "Add",
+   "exec": [],
+   "in": [
+    {
+     "from": "kills",
+     "out": 0
+    },
+    {
+     "t": "Float",
+     "f": 1
+    }
+   ],
+   "x": 840,
+   "y": 160
+  },
+  {
+   "id": "addKill",
+   "type": "SetFlag",
+   "exec": [
+    "down"
+   ],
+   "in": [
+    {
+     "from": "plus1",
+     "out": 0
+    }
+   ],
+   "x": 880,
+   "y": 40,
+   "p": "kills"
+  },
+  {
+   "id": "down",
+   "type": "Log",
+   "exec": [
+    "die"
+   ],
+   "in": [
+    {
+     "t": "String",
+     "s": "[FPS] target down!"
+    }
+   ],
+   "x": 1080,
+   "y": 40
+  },
+  {
+   "id": "die",
+   "type": "DestroyEntity",
+   "exec": [
+    ""
+   ],
+   "in": [
+    {
+     "from": "me",
+     "out": 0
+    }
+   ],
+   "x": 1280,
+   "y": 40
+  }
+ ]
+}

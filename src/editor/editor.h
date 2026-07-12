@@ -31,6 +31,8 @@
 #include "data_table_panel.h"
 #include "ai_panel.h"
 #include "mission_panel.h"
+#include "agent_bridge.h"
+#include "../ai_assist/pulse_client.h"
 #include "imgui.h"
 #include <atomic>
 #include <mutex>
@@ -149,6 +151,14 @@ private:
     void unloadPluginSafe(PluginInfo& p);
     void startCompilePlugin(const PluginInfo& p);   // snapshot → clear world → swap DLL → restore
 
+    // ---- agent bridge (PulseLABS drives the live editor) ----
+    // Transport lives in agent_bridge.h; the command dispatcher (main thread,
+    // full editor access) is in bridge_commands.cpp.
+    void startAgentBridge();
+    void stopAgentBridge();
+    void pumpAgentBridge(); // once per frame, before simulate()
+    std::string handleBridgeCommand(const std::string& method, const JsonValue& params);
+
     // ---- prefabs (entity assets) ----
     void savePrefabDialog(Entity* e);
     void drawPrefabLibrary();
@@ -263,6 +273,10 @@ private:
     bool compileOk_ = false; // written by the worker before compileDone_
     std::mutex compileLogMutex_;
     std::vector<std::string> compileLogPending_; // worker → main-thread log
+
+    // ---- agent bridge ----
+    AgentBridge bridge_;
+    PulseConfig bridgeConfig_; // pulse.json: enabled/port/token shared with PulseLABS
 
     // ---- sub-editors ----
     DialogueGraphEditor dialogueGraph_;

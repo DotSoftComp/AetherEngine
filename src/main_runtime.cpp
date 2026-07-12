@@ -6,6 +6,16 @@
 //   AetherRuntime --project <dir|.aeproj>          run a project
 //   AetherRuntime ... --map assets/maps/foo.json   run a specific map
 //   AetherRuntime ... --frames N --screenshot out.bmp   headless capture
+//   AetherRuntime ... --verify [--frames N]        agent verification: scene
+//        resave round-trip + N frames (default 300) + log scan; prints one
+//        machine-readable "VERIFY PASS|FAIL {json}" line and exits nonzero
+//        on any [error], unknown-type/dangling-link warning, or resave drift.
+//   AetherRuntime ... --compare ref.bmp [--psnrmin N]   visual regression:
+//        captures a screenshot (default <project>/verify_screenshot.bmp,
+//        override with --screenshot) and compares it against the reference.
+//        Prints "COMPARE PASS|FAIL {json}", writes an amplified *_diff.bmp
+//        heatmap on failure, exits nonzero below the PSNR budget (default 35
+//        dB; identical renders report 99). Combines with --verify.
 //
 // Runs the same World the editor authors, fullscreen with the in-game HUD
 // (dialogue, missions) and no editor UI. Built /SUBSYSTEM:WINDOWS (no console
@@ -37,6 +47,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
@@ -69,6 +80,121 @@ struct QualityOverrides {
 static QualityOverrides g_quality;
 
 // Boots a packaged game: game.json next to the exe defines the project.
+// ---- --verify -----------------------------------------------------------------
+// One command an agent runs to prove its change: everything below feeds the
+// final VERIFY line. Failures are the log entries an agent must fix, each
+// already precise (file:node:pin for script links, entity+type for scenes).
+
+static std::string jsonEsc(const std::string& s) {
+    std::string out;
+    for (unsigned char c : s) {
+        if (c == '"' || c == '\\') { out += '\\'; out += (char)c; }
+        else if (c == '\n') out += "\\n";
+        else if (c < 0x20) { char b[8]; std::snprintf(b, sizeof(b), "\\u%04x", c); out += b; }
+        else out += (char)c;
+    }
+    return out;
+}
+
+// Scans the engine log, prints the report, returns the process exit code.
+static int verifyReport(bool loaded, bool resaveOk, int frames, const std::string& map) {
+    // Dedupe: the resave round-trip loads the scene (and its graphs) twice,
+    // so the same schema warning appears twice in the log.
+    auto pushUnique = [](std::vector<std::string>& v, const std::string& s) {
+        for (const std::string& x : v)
+            if (x == s) return;
+        v.push_back(s);
+    };
+    std::vector<std::string> errors, warnings;
+    int scriptLogs = 0;
+    for (const LogEntry& e : logEntries()) {
+        if (e.level == LogLevel::Error) pushUnique(errors, e.text);
+        else if (e.level == LogLevel::Warn &&
+                 (e.text.find("unknown") != std::string::npos ||
+                  e.text.find("out of range") != std::string::npos ||
+                  e.text.find("malformed") != std::string::npos))
+            pushUnique(warnings, e.text);
+        // Gameplay evidence: Log-node output only, not [Script] warnings.
+        if (e.level == LogLevel::Info && e.text.rfind("[Script]", 0) == 0) ++scriptLogs;
+    }
+    bool ok = loaded && resaveOk && errors.empty() && warnings.empty();
+
+    std::ostringstream j;
+    j << "{\"ok\":" << (ok ? "true" : "false") << ",\"map\":\"" << jsonEsc(map)
+      << "\",\"frames\":" << frames << ",\"loaded\":" << (loaded ? "true" : "false")
+      << ",\"resave\":\"" << (loaded ? (resaveOk ? "ok" : "mismatch") : "skipped")
+      << "\",\"scriptLogs\":" << scriptLogs << ",\"errors\":[";
+    for (size_t i = 0; i < errors.size() && i < 25; ++i)
+        j << (i ? "," : "") << "\"" << jsonEsc(errors[i]) << "\"";
+    j << "],\"schemaWarnings\":[";
+    for (size_t i = 0; i < warnings.size() && i < 25; ++i)
+        j << (i ? "," : "") << "\"" << jsonEsc(warnings[i]) << "\"";
+    j << "]}";
+    std::printf("VERIFY %s %s\n", ok ? "PASS" : "FAIL", j.str().c_str());
+    std::fflush(stdout);
+    return ok ? 0 : 1;
+}
+
+// Visual regression: capture vs. reference. Prints one COMPARE line; on
+// failure also logs AE_ERROR (so --verify fails with it) and writes an
+// amplified heatmap next to the capture showing WHERE the frames diverge.
+static bool runCompare(const std::string& shotPath, const std::string& refPath,
+                       double psnrBudget) {
+    int aw = 0, ah = 0, bw = 0, bh = 0;
+    std::vector<uint8_t> a, b;
+    std::string failReason, diffPath;
+    ImageDiff d;
+    if (!readBMP(shotPath.c_str(), aw, ah, a))
+        failReason = "cannot read capture: " + shotPath;
+    else if (!readBMP(refPath.c_str(), bw, bh, b))
+        failReason = "cannot read reference: " + refPath +
+                     " (create it with --screenshot first)";
+    else if (aw != bw || ah != bh)
+        failReason = "size mismatch: capture " + std::to_string(aw) + "x" + std::to_string(ah) +
+                     " vs reference " + std::to_string(bw) + "x" + std::to_string(bh);
+
+    bool ok = false;
+    if (failReason.empty()) {
+        d = compareImages(a, b, aw, ah);
+        ok = d.psnr >= psnrBudget;
+        if (!ok) {
+            diffPath = shotPath;
+            size_t dot = diffPath.rfind('.');
+            diffPath.insert(dot == std::string::npos ? diffPath.size() : dot, "_diff");
+            if (!writeDiffBMP(diffPath.c_str(), a, b, aw, ah)) diffPath.clear();
+        }
+    }
+
+    if (ok)
+        AE_LOG("[Compare] PASS psnr=%.1f dB (budget %.1f), meanAbs=%.2f, diffPixels=%.2f%% "
+               "vs %s", d.psnr, psnrBudget, d.meanAbs, d.diffPct, refPath.c_str());
+    else if (failReason.empty())
+        AE_ERROR("[Compare] FAIL psnr=%.1f dB < budget %.1f (maxAbs=%d, diffPixels=%.2f%%) "
+                 "vs %s — heatmap: %s", d.psnr, psnrBudget, d.maxAbs, d.diffPct,
+                 refPath.c_str(), diffPath.c_str());
+    else
+        AE_ERROR("[Compare] FAIL: %s", failReason.c_str());
+
+    std::ostringstream j;
+    j << "{\"ok\":" << (ok ? "true" : "false");
+    if (failReason.empty()) {
+        char nums[160];
+        std::snprintf(nums, sizeof(nums),
+                      ",\"psnr\":%.2f,\"budget\":%.1f,\"meanAbs\":%.3f,\"maxAbs\":%d,"
+                      "\"diffPct\":%.3f", d.psnr, psnrBudget, d.meanAbs, d.maxAbs, d.diffPct);
+        j << nums;
+    } else {
+        j << ",\"error\":\"" << jsonEsc(failReason) << "\"";
+    }
+    j << ",\"screenshot\":\"" << jsonEsc(shotPath) << "\",\"reference\":\"" << jsonEsc(refPath)
+      << "\"";
+    if (!diffPath.empty()) j << ",\"diffHeatmap\":\"" << jsonEsc(diffPath) << "\"";
+    j << "}";
+    std::printf("COMPARE %s %s\n", ok ? "PASS" : "FAIL", j.str().c_str());
+    std::fflush(stdout);
+    return ok;
+}
+
 static bool loadPackagedGame(Project& project) {
     std::string path = joinPath(engineBinDir(), "game.json");
     std::ifstream f(path, std::ios::binary);
@@ -104,14 +230,21 @@ int main(int argc, char** argv) {
     attachParentConsole();
     int captureFrames = -1;
     const char* screenshotPath = nullptr;
+    const char* comparePath = nullptr;
+    double psnrBudget = 35.0;
     const char* mapPath = nullptr;
     const char* projectArg = nullptr;
     bool gpuProfile = false; // per-pass GPU timing in the benchmark report
+    bool verifyMode = false;
     for (int i = 1; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--project") && i + 1 < argc) projectArg = argv[++i];
         if (!std::strcmp(argv[i], "--map") && i + 1 < argc) mapPath = argv[++i];
         if (!std::strcmp(argv[i], "--frames") && i + 1 < argc) captureFrames = std::atoi(argv[++i]);
         if (!std::strcmp(argv[i], "--screenshot") && i + 1 < argc) screenshotPath = argv[++i];
+        if (!std::strcmp(argv[i], "--verify")) verifyMode = true;
+        if (!std::strcmp(argv[i], "--compare") && i + 1 < argc) comparePath = argv[++i];
+        if (!std::strcmp(argv[i], "--psnrmin") && i + 1 < argc)
+            psnrBudget = std::atof(argv[++i]);
         if (!std::strcmp(argv[i], "--gpuprofile")) gpuProfile = true;
         if (!std::strcmp(argv[i], "--noinstancing")) g_quality.noInstancing = true;
         if (!std::strcmp(argv[i], "--cascades") && i + 1 < argc)
@@ -120,6 +253,7 @@ int main(int argc, char** argv) {
             g_quality.renderScale = (float)std::atof(argv[++i]);
     }
     if (screenshotPath && captureFrames < 0) captureFrames = 60;
+    if (verifyMode && captureFrames < 0) captureFrames = 300;
 
     // Packaged layout wins unless --project explicitly overrides it.
     Project project;
@@ -129,6 +263,7 @@ int main(int argc, char** argv) {
                   false; // no game.json → fall through to the usage error
     if (!booted) {
         std::fprintf(stderr, "Usage: AetherRuntime --project <dir or .aeproj>\n");
+        if (verifyMode) return verifyReport(false, false, 0, mapPath ? mapPath : "");
         MessageBoxA(nullptr,
                     "No game to run.\n\nEither place this exe in a packaged game folder "
                     "(game.json) or pass --project <dir or .aeproj>.",
@@ -136,10 +271,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // --compare needs a capture; default one into the project if none named.
+    std::string autoShot;
+    if (comparePath && !screenshotPath) {
+        autoShot = joinPath(project.root, "verify_screenshot.bmp");
+        screenshotPath = autoShot.c_str();
+        if (captureFrames < 0) captureFrames = 60;
+    }
+
     Window window;
-    // The game runs fullscreen; headless screenshot captures keep a plain
+    // The game runs fullscreen; headless captures/verification keep a plain
     // system window.
-    WindowChrome chrome = screenshotPath ? WindowChrome::System : WindowChrome::Fullscreen;
+    WindowChrome chrome =
+        (screenshotPath || verifyMode) ? WindowChrome::System : WindowChrome::Fullscreen;
     if (!window.create(project.name.c_str(), 1600, 900, chrome)) {
         std::fprintf(stderr, "Failed to create window / GL 4.5 context\n");
         return 1;
@@ -161,7 +305,8 @@ int main(int argc, char** argv) {
                                                                        : g_quality.renderScale;
 
     // `--frames N` without a screenshot is a real-timed benchmark: vsync off,
-    // genuine dt, average frame time reported at exit.
+    // genuine dt, average frame time reported at exit. --verify rides the
+    // same N-frames-then-exit path.
     bool benchmark = captureFrames > 0 && !screenshotPath;
     bool uncapped = screenshotPath != nullptr || benchmark;
     bool wantVsync = !uncapped && g_quality.vsync != 0;
@@ -226,12 +371,23 @@ int main(int argc, char** argv) {
     std::string startScene = mapPath ? std::string(mapPath) : project.startupScene;
     if (startScene.empty() || !loadWorld(world, assets, assets.resolvePath(startScene))) {
         AE_ERROR("[Game] cannot load startup scene '%s'", startScene.c_str());
+        if (verifyMode) return verifyReport(false, false, 0, startScene);
         MessageBoxA(nullptr, "The project's startup scene could not be loaded.",
                     "Aether Engine", MB_OK | MB_ICONERROR);
         return 1;
     }
     world.missions.load(joinPath(project.root, "assets\\missions\\missions.json"));
     world.actions.loadOrDefaults(assets.resolvePath("assets/input.json"));
+
+    // Verify: serialization must round-trip byte-stable before anything runs —
+    // drift here means a hand-edited (or agent-edited) file the engine would
+    // silently rewrite differently.
+    bool resaveOk = true;
+    if (verifyMode) {
+        std::string a = serializeWorld(world, assets);
+        resaveOk = deserializeWorld(world, assets, a) && serializeWorld(world, assets) == a;
+        if (!resaveOk) AE_ERROR("[Verify] scene resave round-trip drift: %s", startScene.c_str());
+    }
 
     Font font;
     if (!font.bake("Segoe UI", 15)) std::fprintf(stderr, "Font bake failed (UI text unavailable)\n");
@@ -246,6 +402,7 @@ int main(int argc, char** argv) {
     double passSums[FrameStats::PassCount] = {};
     double updateSum = 0.0, swapSum = 0.0;
 
+    bool compareOk = true; // stays true when no --compare
     RenderScene renderScene;
     while (window.poll()) {
         LARGE_INTEGER now; QueryPerformanceCounter(&now);
@@ -253,7 +410,8 @@ int main(int argc, char** argv) {
         float time = (float)((double)(now.QuadPart - start.QuadPart) / freq.QuadPart);
         prev = now;
         if (dt > 0.1f) dt = 0.1f;
-        if (screenshotPath) { dt = 1.0f / 60.0f; time = frame / 60.0f; }
+        // Deterministic stepping for captures/verification.
+        if (screenshotPath || verifyMode) { dt = 1.0f / 60.0f; time = frame / 60.0f; }
 
         const Input& in = window.input();
         if (in.keys[VK_ESCAPE]) break;
@@ -297,7 +455,13 @@ int main(int argc, char** argv) {
         }
         ui.end();
 
-        if (screenshotPath && ++frame >= captureFrames) { captureScreenshot(window, screenshotPath); break; }
+        if (screenshotPath && ++frame >= captureFrames) {
+            captureScreenshot(window, screenshotPath);
+            if (comparePath)
+                compareOk = runCompare(screenshotPath, assets.resolvePath(comparePath),
+                                       psnrBudget);
+            break;
+        }
         LARGE_INTEGER s0, s1;
         QueryPerformanceCounter(&s0);
         window.swapBuffers();
@@ -327,5 +491,6 @@ int main(int argc, char** argv) {
     assets.destroy();
     renderer.shutdown();
     window.destroy();
-    return 0;
+    if (verifyMode) return verifyReport(true, resaveOk, frame, startScene);
+    return compareOk ? 0 : 1;
 }

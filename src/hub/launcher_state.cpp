@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <algorithm>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <sstream>
@@ -25,6 +26,27 @@ std::string jsonEsc(const std::string& s) {
     return out;
 }
 } // namespace
+
+int compareEngineVersions(const std::string& a, const std::string& b) {
+    size_t ia = 0, ib = 0;
+    while (ia < a.size() || ib < b.size()) {
+        size_t ea = a.find('.', ia), eb = b.find('.', ib);
+        std::string sa = a.substr(ia, (ea == std::string::npos ? a.size() : ea) - ia);
+        std::string sb = b.substr(ib, (eb == std::string::npos ? b.size() : eb) - ib);
+        char* endA = nullptr;
+        char* endB = nullptr;
+        long na = strtol(sa.c_str(), &endA, 10), nb = strtol(sb.c_str(), &endB, 10);
+        bool numA = endA && *endA == 0, numB = endB && *endB == 0; // "" parses as 0
+        if (numA && numB) {
+            if (na != nb) return na < nb ? -1 : 1;
+        } else if (sa != sb) {
+            return sa < sb ? -1 : 1;
+        }
+        ia = ea == std::string::npos ? a.size() : ea + 1;
+        ib = eb == std::string::npos ? b.size() : eb + 1;
+    }
+    return 0;
+}
 
 std::string LauncherState::stateFilePath() {
     char appData[MAX_PATH] = {};
@@ -137,7 +159,7 @@ const EngineInstall* LauncherState::engineFor(const std::string& version, bool* 
             if (exactMatch) *exactMatch = true;
             return &e;
         }
-        if (!best || e.version > best->version) best = &e; // lexicographic ~ semver-ish
+        if (!best || compareEngineVersions(e.version, best->version) > 0) best = &e;
     }
     return best;
 }

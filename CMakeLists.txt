@@ -13,7 +13,9 @@ project(AetherEngine C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(AE_VERSION "0.1.0")
+# Overridable so the release workflow can stamp the tag's version into the
+# build: cmake -DAE_VERSION=x.y.z (the hub's updater compares this to GitHub).
+set(AE_VERSION "0.1.0" CACHE STRING "Engine version (x.y.z)")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/third_party/imgui)
@@ -83,6 +85,7 @@ add_library(ae_core SHARED
     src/engine/anim_graph.cpp
     src/engine/data_table.cpp
     src/engine/doc_gen.cpp
+    src/engine/agent_bridge_help.cpp
     src/engine/save_game.cpp
     src/engine/engine_modules.cpp
     src/engine/game_module.cpp
@@ -115,7 +118,9 @@ target_link_libraries(ae_core PUBLIC opengl32 user32 gdi32
 # AE_API (see src/core/ae_api.h).
 set_target_properties(ae_core PROPERTIES
     OUTPUT_NAME AetherCore
-    WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    # Import lib next to the DLL so a packaged install can ship it as the SDK.
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # ---- vendored Dear ImGui (docking) + ImGuizmo ------------------------------
 add_library(imgui_lib STATIC
@@ -147,8 +152,10 @@ add_executable(AetherEditor
     src/editor/data_table_panel.cpp
     src/editor/ai_panel.cpp
     src/editor/mission_panel.cpp
+    src/editor/agent_bridge.cpp
+    src/editor/bridge_commands.cpp
 )
-target_link_libraries(AetherEditor PRIVATE ae_core imgui_lib comdlg32)
+target_link_libraries(AetherEditor PRIVATE ae_core imgui_lib comdlg32 ws2_32)
 
 # ---- game runtime ----------------------------------------------------------
 # /SUBSYSTEM:WINDOWS so packaged games never flash a console window; the entry
@@ -168,6 +175,7 @@ endif()
 add_executable(AetherHub WIN32
     src/hub/hub_main.cpp
     src/hub/launcher_state.cpp
+    src/hub/engine_update.cpp
     src/editor/imgui_layer.cpp
 )
 target_link_libraries(AetherHub PRIVATE ae_core imgui_lib comdlg32 shell32)

@@ -1,0 +1,21 @@
+{
+ "player": "Player",
+ "missions": [
+  {
+   "id": "clear_arena",
+   "name": "Clear the Arena",
+   "description": "Destroy all 6 practice targets.",
+   "autoStart": true,
+   "sequential": true,
+   "objectives": [
+    {
+     "id": "destroy_targets",
+     "text": "Destroy the glowing targets (6)",
+     "type": "flag",
+     "flag": "kills",
+     "value": 6
+    }
+   ]
+  }
+ ]
+}

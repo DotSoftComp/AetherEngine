@@ -28,6 +28,19 @@ bool deserializeWorldJson(World& world, AssetLibrary& assets, const JsonValue& r
 // Deep-copies an entity (components + children) next to the original.
 Entity* duplicateEntity(World& world, AssetLibrary& assets, Entity* src);
 
+// ---- agent bridge / tooling -------------------------------------------------
+// One entity subtree as prefab-shaped JSON (exactly what saveEntityPrefab
+// writes, without the file).
+std::string serializeEntitySubtree(const Entity& root);
+// Applies one component JSON object ({ "type": "...", ... }) to an entity:
+// fills the existing component of that type, or creates it first. Returns
+// false for a missing/unknown "type".
+bool applyComponentJson(Entity& e, AssetLibrary& assets, const JsonValue& comp);
+// Spawns an "entities" array (scene/prefab shape) under `parent` with fresh
+// Guids and intra-array refs remapped. Returns the first spawned root.
+Entity* spawnEntitiesFromJson(World& world, AssetLibrary& assets, const JsonValue& entities,
+                              Entity* parent = nullptr);
+
 // ---- prefabs: reusable entity assets (assets/entities/*.json) ----
 // A prefab is one entity subtree (root + descendants + components) saved as an
 // asset. Instantiating one spawns fresh copies with new Guids (so many

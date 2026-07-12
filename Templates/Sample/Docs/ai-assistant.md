@@ -11,6 +11,10 @@ in, reviewed project files out, through a pipeline you can watch working.
 2. In the panel: **Setup** → enter the URL + key → **Save & test**. The config
    is stored per user (`%APPDATA%/AetherEngine/pulse.json`), never in the
    project.
+3. Running a **local model**? Raise "Request timeout (s)" in the same Setup
+   section (`timeoutSeconds` in pulse.json, default 600) — one planning call
+   can generate for many minutes. Only generation calls wait this long; a
+   backend that is *down* still fails within seconds.
 
 ## How it works (what the panel visualizes)
 
@@ -22,11 +26,13 @@ prompt -> team -> knowledge -> planner -> specialists -> review
   *Aether Planner* (technical producer), *Aether Coder* (gameplay programmer),
   *Aether Designer* (technical designer). They are real agents with memory on
   the backend side.
-- **Knowledge** — this project's `Docs/` (including the generated component and
-  script-node reference) is ingested into Pulse Cortex and linked to the
-  agents. From then on they answer **grounded in this engine's real API** —
-  the "RAG: N chunks" line on each agent card shows exactly which docs a
-  response used (hover for the citations).
+- **Knowledge** — every run, the assistant diffs this project's `Docs/**/*.md`
+  (including the generated reference) against what it already ingested into
+  Pulse Cortex, and ingests anything **new or changed** — regenerate the
+  reference and the agents pick it up on their next prompt, no manual step.
+  From then on they answer **grounded in this engine's real API** — the
+  "RAG: N chunks" line on each agent card shows exactly which docs a response
+  used (hover for the citations).
 - **Planner** — turns your prompt into **2–3 genuinely different complete
   plans**: steps, which specialist handles each, and the exact files that
   would be created. Pick one.
@@ -39,11 +45,20 @@ prompt -> team -> knowledge -> planner -> specialists -> review
   first and invalid ones cannot be applied. Model routing, PII shielding, and
   token accounting run server-side in PulseLABS.
 
+## The agents know about the live editor
+
+The personas are told (per call, and via the ingested
+[reference/agent-bridge.md](reference/agent-bridge.md)) that a running editor
+exposes the **agent bridge** — a PulseLABS-gated localhost API that can spawn
+entities, set components, control Play, read logs, and screenshot the
+viewport. Plans that need in-editor wiring or verification will reference
+concrete bridge calls.
+
 ## Notes
 
 - Backend calls run on a worker thread — the editor never blocks.
-- Assistant state (persona ids, knowledge flag) lives in
-  `Intermediate/AiAssist/state.json`; delete it to re-create the team or
-  re-ingest docs (e.g. after regenerating the doc reference).
+- Assistant state (persona ids, per-doc ingestion hashes) lives in
+  `Intermediate/AiAssist/state.json`; delete it to re-create the team or force
+  a full re-ingest. Ordinary doc changes need nothing — the sync is automatic.
 - Applied files are ordinary project files: verify them with the usual
   headless loop (see [README.md](README.md)).

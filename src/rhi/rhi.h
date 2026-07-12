@@ -171,6 +171,8 @@ void clear(bool color, float r, float g, float b, float a, bool depth);
 void blitToBackbuffer(FramebufferHandle src, int srcW, int srcH, int dstW, int dstH);
 // Read the backbuffer as tightly-packed RGBA8 (screenshots).
 void readBackbuffer(int width, int height, void* rgbaOut);
+// Read a framebuffer's color attachment 0 (agent-bridge viewport screenshots).
+void readFramebuffer(FramebufferHandle f, int width, int height, void* rgbaOut);
 
 // ---- vertex streams (per-frame data: particles, debug lines, UI quads) --------
 enum class Topology { Triangles, Lines };

@@ -128,6 +128,21 @@ hints, not validation.
 | `yaw` | float | `0` | Yaw |  |
 | `pitch` | float | `-12` | Pitch |  |
 
+## FirstPersonCamera
+
+- display name: First-Person Camera  
+- category: Behaviors  
+- source: core
+
+| field | type | default | label | range |
+|---|---|---|---|---|
+| `targetGuid` | entity guid | `""` | Target |  |
+| `targetName` | entity name (fallback) | `""` | Target |  |
+| `eyeHeight` | float | `1.65` | Eye height |  |
+| `lookSens` | float | `0.14` | Look sens |  |
+| `yaw` | float | `-90` | Yaw |  |
+| `pitch` | float | `0` | Pitch |  |
+
 ## FollowCamera
 
 - display name: Follow Camera  
@@ -282,26 +297,4 @@ hints, not validation.
 | `radius` | float | `3` | Radius | 0.1 .. 100 |
 | `once` | bool | `false` | Once |  |
 | `player` | string | `"MainCamera"` | Player entity |  |
-
-## Rotator
-
-- display name: Rotator  
-- category: Scripts  
-- source: game module
-
-| field | type | default | label | range |
-|---|---|---|---|---|
-| `speed` | float | `45` | Speed (deg/s) |  |
-| `axis` | vec3 | `[0, 1, 0]` | Axis | -1 .. 1 |
-
-## PulseLight
-
-- display name: Pulse Light  
-- category: OrbitFx  
-- source: plugin
-
-| field | type | default | label | range |
-|---|---|---|---|---|
-| `speed` | float | `2` | Pulse speed | 0 .. 20 |
-| `amount` | float | `0.6` | Pulse amount |  |
 

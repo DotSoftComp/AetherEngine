@@ -1,0 +1,1129 @@
+{
+ "version": 1,
+ "environment": {
+  "sunDir": [
+   0.35,
+   0.62,
+   0.42
+  ],
+  "skyIntensity": 22
+ },
+ "entities": [
+  {
+   "name": "Floor",
+   "guid": "f9500000000000000000000000000001",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "plane",
+     "texSet": "tile"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      14,
+      0.1,
+      14
+     ],
+     "center": [
+      0,
+      -0.1,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "WallN",
+   "guid": "f9500000000000000000000000000002",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    1.2,
+    -14
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    28.5,
+    2.4,
+    0.5
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "tile"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "WallS",
+   "guid": "f9500000000000000000000000000003",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    1.2,
+    14
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    28.5,
+    2.4,
+    0.5
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "tile"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "WallE",
+   "guid": "f9500000000000000000000000000004",
+   "parent": -1,
+   "active": true,
+   "position": [
+    14,
+    1.2,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.5,
+    2.4,
+    28.5
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "tile"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "WallW",
+   "guid": "f9500000000000000000000000000005",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -14,
+    1.2,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.5,
+    2.4,
+    28.5
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "tile"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Player",
+   "guid": "f9500000000000000000000000000006",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0.1,
+    10
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "RigidBody",
+     "bodyType": 1,
+     "mass": 70,
+     "lockRotation": true
+    },
+    {
+     "type": "Collider",
+     "shape": 2,
+     "radius": 0.3,
+     "height": 1.4,
+     "center": [
+      0,
+      0.7,
+      0
+     ]
+    },
+    {
+     "type": "CharacterController",
+     "moveSpeed": 5.0,
+     "sprintSpeed": 8.5,
+     "jumpSpeed": 5.0,
+     "faceMoveDir": false
+    }
+   ]
+  },
+  {
+   "name": "FPCamera",
+   "guid": "f9500000000000000000000000000007",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    1.75,
+    10
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Camera",
+     "fov": 70,
+     "isDefault": true
+    },
+    {
+     "type": "FirstPersonCamera",
+     "targetGuid": "f9500000000000000000000000000006",
+     "targetName": "Player",
+     "eyeHeight": 1.7,
+     "yaw": -90,
+     "pitch": 0
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/player_shoot.json"
+    }
+   ]
+  },
+  {
+   "name": "GameManager",
+   "guid": "f9500000000000000000000000000008",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/game_flow.json"
+    },
+    {
+     "type": "UIDocument",
+     "doc": "assets/ui/hud.json"
+    }
+   ]
+  },
+  {
+   "name": "Crate1",
+   "guid": "f9500000000000000000000000000009",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -10,
+    0.5,
+    2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Crate2",
+   "guid": "f950000000000000000000000000000a",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -10,
+    1.5,
+    2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Crate3",
+   "guid": "f950000000000000000000000000000b",
+   "parent": -1,
+   "active": true,
+   "position": [
+    10,
+    0.5,
+    2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Crate4",
+   "guid": "f950000000000000000000000000000c",
+   "parent": -1,
+   "active": true,
+   "position": [
+    10,
+    1.5,
+    2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Crate5",
+   "guid": "f950000000000000000000000000000d",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -4,
+    0.5,
+    -3
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Crate6",
+   "guid": "f950000000000000000000000000000e",
+   "parent": -1,
+   "active": true,
+   "position": [
+    5,
+    0.5,
+    -8
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Crate7",
+   "guid": "f950000000000000000000000000000f",
+   "parent": -1,
+   "active": true,
+   "position": [
+    5.9,
+    0.5,
+    -7.2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Crate8",
+   "guid": "f9500000000000000000000000000010",
+   "parent": -1,
+   "active": true,
+   "position": [
+    5.45,
+    1.5,
+    -7.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "cube",
+     "texSet": "rust"
+    },
+    {
+     "type": "Collider",
+     "shape": 0,
+     "halfExtents": [
+      0.5,
+      0.5,
+      0.5
+     ],
+     "center": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Target1",
+   "guid": "f9500000000000000000000000000011",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -8,
+    1.6,
+    -6
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "material": {
+      "baseColor": [
+       1.0,
+       0.45,
+       0.1,
+       1.0
+      ],
+      "metallic": 0.0,
+      "roughness": 0.35,
+      "emissive": [
+       4.5,
+       1.4,
+       0.25
+      ]
+     }
+    },
+    {
+     "type": "Spin",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "degreesPerSec": 90
+    },
+    {
+     "type": "Collider",
+     "shape": 1,
+     "radius": 0.5
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/target.json"
+    }
+   ]
+  },
+  {
+   "name": "Target2",
+   "guid": "f9500000000000000000000000000012",
+   "parent": -1,
+   "active": true,
+   "position": [
+    8,
+    1.6,
+    -6
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "material": {
+      "baseColor": [
+       1.0,
+       0.45,
+       0.1,
+       1.0
+      ],
+      "metallic": 0.0,
+      "roughness": 0.35,
+      "emissive": [
+       4.5,
+       1.4,
+       0.25
+      ]
+     }
+    },
+    {
+     "type": "Spin",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "degreesPerSec": 90
+    },
+    {
+     "type": "Collider",
+     "shape": 1,
+     "radius": 0.5
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/target.json"
+    }
+   ]
+  },
+  {
+   "name": "Target3",
+   "guid": "f9500000000000000000000000000013",
+   "parent": -1,
+   "active": true,
+   "position": [
+    0,
+    1.6,
+    -11
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "material": {
+      "baseColor": [
+       1.0,
+       0.45,
+       0.1,
+       1.0
+      ],
+      "metallic": 0.0,
+      "roughness": 0.35,
+      "emissive": [
+       4.5,
+       1.4,
+       0.25
+      ]
+     }
+    },
+    {
+     "type": "Spin",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "degreesPerSec": 90
+    },
+    {
+     "type": "Collider",
+     "shape": 1,
+     "radius": 0.5
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/target.json"
+    }
+   ]
+  },
+  {
+   "name": "Target4",
+   "guid": "f9500000000000000000000000000014",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -10,
+    2.7,
+    2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "material": {
+      "baseColor": [
+       1.0,
+       0.45,
+       0.1,
+       1.0
+      ],
+      "metallic": 0.0,
+      "roughness": 0.35,
+      "emissive": [
+       4.5,
+       1.4,
+       0.25
+      ]
+     }
+    },
+    {
+     "type": "Spin",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "degreesPerSec": 90
+    },
+    {
+     "type": "Collider",
+     "shape": 1,
+     "radius": 0.5
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/target.json"
+    }
+   ]
+  },
+  {
+   "name": "Target5",
+   "guid": "f9500000000000000000000000000015",
+   "parent": -1,
+   "active": true,
+   "position": [
+    10,
+    2.7,
+    2
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "material": {
+      "baseColor": [
+       1.0,
+       0.45,
+       0.1,
+       1.0
+      ],
+      "metallic": 0.0,
+      "roughness": 0.35,
+      "emissive": [
+       4.5,
+       1.4,
+       0.25
+      ]
+     }
+    },
+    {
+     "type": "Spin",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "degreesPerSec": 90
+    },
+    {
+     "type": "Collider",
+     "shape": 1,
+     "radius": 0.5
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/target.json"
+    }
+   ]
+  },
+  {
+   "name": "Target6",
+   "guid": "f9500000000000000000000000000016",
+   "parent": -1,
+   "active": true,
+   "position": [
+    4,
+    1.6,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    0.9,
+    0.9,
+    0.9
+   ],
+   "components": [
+    {
+     "type": "MeshRenderer",
+     "mesh": "sphere",
+     "material": {
+      "baseColor": [
+       1.0,
+       0.45,
+       0.1,
+       1.0
+      ],
+      "metallic": 0.0,
+      "roughness": 0.35,
+      "emissive": [
+       4.5,
+       1.4,
+       0.25
+      ]
+     }
+    },
+    {
+     "type": "Spin",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "degreesPerSec": 90
+    },
+    {
+     "type": "Collider",
+     "shape": 1,
+     "radius": 0.5
+    },
+    {
+     "type": "ScriptGraph",
+     "graph": "assets/scripts/target.json"
+    }
+   ]
+  },
+  {
+   "name": "LampA",
+   "guid": "f9500000000000000000000000000017",
+   "parent": -1,
+   "active": true,
+   "position": [
+    -6,
+    3.2,
+    -4
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Light",
+     "lightType": 0,
+     "color": [
+      1.0,
+      0.85,
+      0.6
+     ],
+     "intensity": 16,
+     "range": 20
+    }
+   ]
+  },
+  {
+   "name": "LampB",
+   "guid": "f9500000000000000000000000000018",
+   "parent": -1,
+   "active": true,
+   "position": [
+    6,
+    3.2,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "components": [
+    {
+     "type": "Light",
+     "lightType": 0,
+     "color": [
+      0.6,
+      0.8,
+      1.0
+     ],
+     "intensity": 14,
+     "range": 20
+    }
+   ]
+  }
+ ]
+}

@@ -128,6 +128,21 @@ hints, not validation.
 | `yaw` | float | `0` | Yaw |  |
 | `pitch` | float | `-12` | Pitch |  |
 
+## FirstPersonCamera
+
+- display name: First-Person Camera  
+- category: Behaviors  
+- source: core
+
+| field | type | default | label | range |
+|---|---|---|---|---|
+| `targetGuid` | entity guid | `""` | Target |  |
+| `targetName` | entity name (fallback) | `""` | Target |  |
+| `eyeHeight` | float | `1.65` | Eye height |  |
+| `lookSens` | float | `0.14` | Look sens |  |
+| `yaw` | float | `-90` | Yaw |  |
+| `pitch` | float | `0` | Pitch |  |
+
 ## FollowCamera
 
 - display name: Follow Camera  

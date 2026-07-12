@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "environment": { "sunDir": [0.294086, 0.367607, 0.882258], "skyIntensity": 14 },
+  "entities": [
+    { "name": "Floor", "guid": "1c16500bc3d044e4846b183f92708c48", "parent": -1, "active": true,
+      "position": [0, 0, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1],
+      "components": [
+        { "type": "MeshRenderer", "mesh": "plane", "texSet": "tile", "castShadow": false, "drawDistance": 0, "material": { "baseColor": [1, 1, 1, 1], "metallic": 1, "roughness": 1, "emissive": [0, 0, 0], "uvScale": 1, "normalScale": 1, "occlusionStrength": 1, "alphaCutoff": -1, "doubleSided": false, "blend": false, "graph": "", "subsurface": 0, "sssCurvature": 0, "translucency": 0, "sssTint": [1, 0.3, 0.2] } }
+      ] },
+    { "name": "MainCamera", "guid": "3251aac8bb73402ebd7cfb80dd663fd0", "parent": -1, "active": true,
+      "position": [0, 2.2, 5], "rotation": [-0.0616284, -0.704416, -0.0616284, 0.704416], "scale": [1, 1, 1],
+      "components": [
+        { "type": "Camera", "fov": 55, "near": 0.1, "far": 300, "isDefault": true },
+        { "type": "CameraController", "moveSpeed": 4.5, "sprintSpeed": 14, "lookSens": 0.18, "yaw": 0, "pitch": -10 }
+      ] },
+    { "name": "Lamp", "guid": "14393d53a6784afeac7b4213c62f3d1d", "parent": -1, "active": true,
+      "position": [2, 3, 2], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1],
+      "components": [
+        { "type": "Light", "lightType": 0, "color": [1, 0.6, 0.3], "intensity": 18, "range": 16, "innerAngle": 25, "outerAngle": 35 }
+      ] },
+    { "name": "Pedestal", "guid": "7fd8683573e841f3bc6ffb8c2ebfba3f", "parent": -1, "active": true,
+      "position": [0, 0.5, 0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1],
+      "components": [
+        { "type": "MeshRenderer", "mesh": "cube", "texSet": "", "castShadow": true, "drawDistance": 0, "material": { "baseColor": [0.75, 0.76, 0.8, 1], "metallic": 0, "roughness": 0.5, "emissive": [0, 0, 0], "uvScale": 1, "normalScale": 1, "occlusionStrength": 1, "alphaCutoff": -1, "doubleSided": false, "blend": false, "graph": "", "subsurface": 0, "sssCurvature": 0, "translucency": 0, "sssTint": [1, 0.3, 0.2] } }
+      ] },
+    { "name": "Orb", "guid": "c5b81c2103fb4a42a28894894910aebd", "parent": -1, "active": true,
+      "position": [0, 1.6, 0], "rotation": [0, 0, 0, 1], "scale": [0.6, 0.6, 0.6],
+      "components": [
+        { "type": "MeshRenderer", "mesh": "sphere", "texSet": "", "castShadow": true, "drawDistance": 0, "material": { "baseColor": [0.3, 0.8, 1, 1], "metallic": 0, "roughness": 0.2, "emissive": [0.4, 2.2, 3.5], "uvScale": 1, "normalScale": 1, "occlusionStrength": 1, "alphaCutoff": -1, "doubleSided": false, "blend": false, "graph": "", "subsurface": 0, "sssCurvature": 0, "translucency": 0, "sssTint": [1, 0.3, 0.2] } },
+        { "type": "ScriptGraph", "graph": "assets/scripts/demo_orb.json" }
+      ] }
+  ]
+}

@@ -9,6 +9,7 @@
 #pragma once
 #include "../ai_assist/dev_team.h"
 #include "../ai_assist/pulse_client.h"
+#include <functional>
 #include <string>
 
 namespace ae {
@@ -16,6 +17,10 @@ namespace ae {
 class AiPanel {
 public:
     bool visible = false;
+
+    // The editor's script-compile trigger; fired when a C++ proposal is
+    // applied so proposed code hot-reloads without a manual step.
+    std::function<void()> onCompileScripts;
 
     void init(const std::string& projectRoot);
     void draw();
@@ -33,6 +38,7 @@ private:
     bool initialized_ = false;
 
     char promptBuf_[1024] = {};
+    char feedbackBuf_[1024] = {};
     char urlBuf_[256] = {};
     char keyBuf_[256] = {};
     int connState_ = 0; // 0 unknown, 1 checking?, 2 online, 3 offline

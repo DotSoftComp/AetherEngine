@@ -12,6 +12,11 @@ struct EngineInstall {
     std::string version; // from engine.json
 };
 
+// Dotted-numeric ("semver-ish") version order: -1 / 0 / +1 when a < / == / > b.
+// "0.10.0" beats "0.9.0"; missing segments count as 0; non-numeric segments
+// fall back to string comparison.
+int compareEngineVersions(const std::string& a, const std::string& b);
+
 struct KnownProject {
     std::string name;
     std::string path;          // the .aeproj file

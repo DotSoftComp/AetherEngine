@@ -1,0 +1,14 @@
+{
+ "name": "FPS",
+ "engineVersion": "0.1.0",
+ "startupScene": "assets/maps/arena.json",
+ "module": {
+  "name": "GameModule",
+  "sourceDir": "Source"
+ },
+ "modules": {
+  "narrative": false,
+  "ai": false,
+  "animation": false
+ }
+}

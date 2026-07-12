@@ -67,6 +67,51 @@ public:
     }
 };
 
+// First-person camera: rides a target entity at eye height and owns mouse
+// look (always on — an FPS aims with the mouse, no button held). Pair the
+// target with a CharacterController: it moves relative to the active camera,
+// so look direction steers movement for free. The FPS starter kit's rig.
+class FirstPersonCameraBehavior : public Behavior {
+public:
+    EntityRef targetRef;
+    std::string targetName; // legacy/authoring fallback (see ThirdPersonCameraBehavior)
+    float eyeHeight = 1.65f;
+    float lookSens = 0.14f;
+    float yaw = -90.0f, pitch = 0.0f;
+    float minPitch = -85.0f, maxPitch = 85.0f;
+
+    const char* typeName() const override { return "FirstPersonCamera"; }
+    void reflect(PropertyVisitor& v) override {
+        v.visit("targetGuid", "targetName", targetRef, targetName, {PropKind::Default, "Target"});
+        v.visit("eyeHeight", eyeHeight, {PropKind::Default, "Eye height", 0.02f});
+        v.visit("lookSens", lookSens, {PropKind::Default, "Look sens", 0.005f});
+        v.visit("yaw", yaw, {PropKind::Angle, "Yaw", 0.5f});
+        v.visit("pitch", pitch, {PropKind::Angle, "Pitch", 0.5f});
+    }
+
+    Entity* resolveTarget() {
+        Entity* t = targetRef.get(world());
+        if (!t && !targetName.empty()) {
+            t = world().find(targetName);
+            if (t) targetRef.set(t);
+        }
+        return t;
+    }
+
+    void onUpdate(float) override {
+        const Input& in = world().input();
+        yaw += in.mouseDX * lookSens;
+        pitch = clampf(pitch - in.mouseDY * lookSens, minPitch, maxPitch);
+
+        float yr = radians(yaw), pr = radians(pitch);
+        Vec3 dir(std::cos(pr) * std::cos(yr), std::sin(pr), std::cos(pr) * std::sin(yr));
+
+        if (Entity* target = resolveTarget())
+            entity().transform.position = target->worldPosition() + Vec3(0, eyeHeight, 0);
+        entity().transform.rotation = quatLookAt(dir);
+    }
+};
+
 // Smoothly trails a target at a world-space offset and looks at it — a
 // traveling/dolly camera whose position depends on where the target has
 // been, not a rigid parent-child attachment (so it lags behind naturally).

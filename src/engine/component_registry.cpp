@@ -95,6 +95,7 @@ static void registerCoreComponents(ComponentRegistry& r) {
     r.add<OrbitBehavior>("Orbit", "Orbit", "Behaviors");
     r.add<CameraController>("CameraController", "Camera Controller", "Behaviors");
     r.add<ThirdPersonCameraBehavior>("ThirdPersonCamera", "Third-Person Camera", "Behaviors");
+    r.add<FirstPersonCameraBehavior>("FirstPersonCamera", "First-Person Camera", "Behaviors");
     r.add<FollowCameraBehavior>("FollowCamera", "Follow Camera", "Behaviors");
 }
 

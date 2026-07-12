@@ -14,15 +14,27 @@ binary assets to fight.
 | [ai-assistant.md](ai-assistant.md) | The in-editor AI dev team (PulseLABS): setup, pipeline, review workflow |
 | [reference/components.md](reference/components.md) | **Generated** — every component type with its exact JSON fields, defaults, and ranges |
 | [reference/script-nodes.md](reference/script-nodes.md) | **Generated** — every script-graph node with its pins, params, and defaults |
+| [reference/agent-bridge.md](reference/agent-bridge.md) | **Generated** — the live-editor control API (spawn/modify entities, Play, logs, screenshots) for PulseLABS tooling |
 
-The two `reference/` files are generated from the engine's live registries
+The `reference/` files are generated from the engine's live registries
 (`AetherDocGen <projectDir> --with-module`, or Tools > Regenerate Doc Reference
 in the editor). Regenerate them after adding components or nodes — never edit
 them by hand.
 
 ## The verification loop (important for agents)
 
-Aether runs headless, so changes can be verified without a human at the screen:
+Aether runs headless, so changes can be verified without a human at the screen.
+The one-command form:
+
+```
+# resave round-trip + 300 frames + log scan; exits nonzero on failure and
+# prints a final machine-readable line: VERIFY PASS|FAIL {json report}
+AetherRuntime.exe --project <projectDir> --verify [--map m] [--frames N]
+```
+
+`--verify` fails on any `[error]`, scene resave drift, and every schema
+warning — unknown component types (with the entity name) and script-graph
+link problems (file:node:pin precision). The individual flags:
 
 ```
 # run the game N frames, then quit (logs go to stdout)
@@ -30,6 +42,10 @@ AetherRuntime.exe --project <projectDir> --frames 300
 
 # same, but load a specific map and save a screenshot
 AetherRuntime.exe --project <projectDir> --map assets/maps/test.json --frames 60 --screenshot out.bmp
+
+# visual regression: compare a fresh capture against a saved reference
+# (COMPARE PASS|FAIL {json}; failures write an amplified *_diff.bmp heatmap)
+AetherRuntime.exe --project <projectDir> --compare ref.bmp [--psnrmin 35]
 
 # open the editor headless for a screenshot (edit-mode view)
 AetherEditor.exe --project <projectDir> --frames 40 --screenshot out.bmp
@@ -42,3 +58,9 @@ The `Log` script node prints `[Script] <text>` to stdout — put one in a graph
 and grep the run output to verify gameplay logic end to end. Malformed JSON or
 unknown node/component types produce loud `[warn]`/`[error]` lines instead of
 silent failures.
+
+When the **editor is already open**, there is a second path: the agent bridge,
+a localhost control server that drives the live editor (spawn/modify entities,
+start/stop Play, read logs, screenshot the viewport). It is gated to PulseLABS
+tooling by a shared token — see
+[reference/agent-bridge.md](reference/agent-bridge.md).

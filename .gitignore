@@ -110,3 +110,5 @@ render_test.png
 *.bmp
 # vendored upstream clones' original .git dirs (kept as reversible backups)
 .git-backup/
+# staged engine-install zips (tools/make_install.ps1)
+dist/

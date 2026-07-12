@@ -1,0 +1,56 @@
+# Aether Engine — release pipeline. Push a version tag and users get the
+# update in the hub automatically:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Builds Release, runs the headless smoke tests, stages the install layout
+# with tools/make_install.ps1 and publishes AetherEngine-<ver>-win64.zip as a
+# GitHub Release — which the hub's EngineUpdater polls via
+# /repos/<repo>/releases/latest.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release + upload the asset
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (version = tag)
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart("v")
+          cmake -B build -DAE_VERSION="$ver"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Smoke tests
+        shell: pwsh
+        run: |
+          $bin = "build/bin/Release"
+          foreach ($t in "AetherPhysSmoke", "AetherUndoSmoke", "AetherInputSmoke",
+                         "AetherSaveSmoke", "AetherNavSmoke") {
+            & "$bin/$t.exe"
+            if ($LASTEXITCODE -ne 0) { throw "$t failed (exit $LASTEXITCODE)" }
+          }
+
+      - name: Stage install zip
+        shell: pwsh
+        run: pwsh tools/make_install.ps1 -BuildDir build -Config Release -OutDir dist
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = Get-ChildItem dist/*.zip | Select-Object -First 1
+          gh release create "${{ github.ref_name }}" $zip.FullName `
+            --title "Aether Engine ${{ github.ref_name }}" `
+            --generate-notes

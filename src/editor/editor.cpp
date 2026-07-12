@@ -178,6 +178,7 @@ bool Editor::init(Window* window, Renderer* renderer, World* world, AssetLibrary
     audioEngine().init(); // AudioSource components only sound during Play
 
     aiPanel_.init(projectRoot_);
+    aiPanel_.onCompileScripts = [this]() { startCompileScripts(); };
 
     // Feed the borderless window our custom-title-bar drag regions.
     window->setCaptionHitTest(&Editor::captionHitThunk, this);
@@ -201,11 +202,22 @@ bool Editor::init(Window* window, Renderer* renderer, World* world, AssetLibrary
         }
     }
 
+    // Agent bridge: PulseLABS-gated localhost control server. The token is
+    // the shared secret; generate it once so PulseLABS tooling can read it
+    // from pulse.json.
+    bridgeConfig_ = PulseConfig::load();
+    if (bridgeConfig_.bridgeToken.empty()) {
+        bridgeConfig_.bridgeToken = Guid::generate().toString();
+        bridgeConfig_.save();
+    }
+    if (bridgeConfig_.bridgeEnabled) startAgentBridge();
+
     AE_LOG("[Editor] ready (project: %s)", projectRoot_.c_str());
     return true;
 }
 
 void Editor::shutdown() {
+    stopAgentBridge();
     if (compileThread_.joinable()) compileThread_.join();
     if (packageThread_.joinable()) packageThread_.join();
     audioEngine().shutdown();
@@ -570,8 +582,8 @@ void Editor::startCompilePlugin(const PluginInfo& p) {
 
     std::string dir = p.dir, name = p.name, src = p.sourceDir;
     pluginCompileThread_ = std::thread([this, dir, name, src]() {
-        bool ok = buildModuleAt(dir + "\\" + src, name, dir + "\Binaries",
-                                dir + "\Intermediate\PluginBuild", "Release",
+        bool ok = buildModuleAt(dir + "\\" + src, name, dir + "\\Binaries",
+                                dir + "\\Intermediate\\PluginBuild", "Release",
                                 [this](const std::string& line) {
                                     std::lock_guard<std::mutex> lock(compileLogMutex_);
                                     compileLogPending_.push_back(line);
@@ -763,6 +775,7 @@ void Editor::frame(float dt, float) {
     }
 
     pollCompile(); // stream script-build output; hot-reload the DLL when done
+    pumpAgentBridge(); // PulseLABS requests, before simulate so edits tick this frame
 
     simulate(dt);
     if (viewportNeedsRender()) renderSceneToViewport(dt); // else reuse cached vpTex_
@@ -1087,8 +1100,21 @@ void Editor::drawMenus() {
         }
         if (ImGui::MenuItem("Modules & Plugins")) showModulesPanel_ = true;
         if (ImGui::MenuItem("AI Assistant")) aiPanel_.visible = true;
+        {
+            char bridgeLabel[64];
+            std::snprintf(bridgeLabel, sizeof(bridgeLabel), "Agent Bridge (port %d)",
+                          bridgeConfig_.bridgePort);
+            if (ImGui::MenuItem(bridgeLabel, nullptr, bridge_.running())) {
+                bridgeConfig_.bridgeEnabled = !bridge_.running();
+                bridgeConfig_.save();
+                bridgeConfig_.bridgeEnabled ? startAgentBridge() : stopAgentBridge();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Lets PulseLABS drive this editor over localhost.\n"
+                                  "Token-gated: %%APPDATA%%/AetherEngine/pulse.json");
+        }
         if (ImGui::MenuItem("Regenerate Doc Reference"))
-            generateReferenceDocs(projectRoot_ + "\Docs");
+            generateReferenceDocs(projectRoot_ + "\\Docs");
         if (ImGui::MenuItem("Data Table Editor")) {
             dataTable_.visible = true;
             if (!dataTable_.loaded()) {
