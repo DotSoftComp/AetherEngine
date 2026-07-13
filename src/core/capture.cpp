@@ -1,7 +1,5 @@
 #include "capture.h"
 #include "../rhi/rhi.h"
-#include "window.h"
-#include "../gl/gl_api.h"
 #include <cmath>
 #include <cstdio>
 
@@ -32,8 +30,7 @@ bool writeBMP(const char* path, int w, int h, const std::vector<uint8_t>& rgba) 
     return true;
 }
 
-void captureScreenshot(Window& window, const char* path) {
-    int w = window.width(), h = window.height();
+void captureScreenshot(int w, int h, const char* path) {
     std::vector<uint8_t> pixels((size_t)w * h * 4);
     rhi::readBackbuffer(w, h, pixels.data());
     if (writeBMP(path, w, h, pixels)) std::printf("Screenshot written: %s\n", path);

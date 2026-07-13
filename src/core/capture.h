@@ -8,10 +8,10 @@
 
 namespace ae {
 
-class Window;
-
 bool writeBMP(const char* path, int w, int h, const std::vector<uint8_t>& rgba);
-void captureScreenshot(Window& window, const char* path);
+// Reads the backbuffer at w×h and writes it as a BMP (window-backend-agnostic;
+// hosts pass their window's width()/height()).
+void captureScreenshot(int w, int h, const char* path);
 
 // Reads a BMP written by writeBMP (24-bit uncompressed) back into RGBA.
 bool readBMP(const char* path, int& w, int& h, std::vector<uint8_t>& rgba);

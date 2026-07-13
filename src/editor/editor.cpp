@@ -1847,14 +1847,14 @@ void Editor::drawDetails() {
             c->reflect(iv);
             if (iv.assetsDirty()) c->onDeserialized(*assets_);
 
-            // Editor-only extra with no reflected field: animation clip picker
-            // (clip selection lives on the shared Model, not the component).
+            // Editor-only extra: a named picker for the reflected clip index.
             if (auto* mc = dynamic_cast<ModelComponent*>(c)) {
                 if (mc->model && mc->model->clipCount() > 0) {
-                    if (ImGui::BeginCombo("Clip", "animation clips")) {
+                    int cur = mc->clip >= 0 && mc->clip < mc->model->clipCount() ? mc->clip : 0;
+                    if (ImGui::BeginCombo("Clip name", mc->model->clipName(cur))) {
                         for (int i = 0; i < mc->model->clipCount(); ++i)
-                            if (ImGui::Selectable(mc->model->clipName(i)))
-                                mc->model->setClip(i);
+                            if (ImGui::Selectable(mc->model->clipName(i), i == cur))
+                                mc->clip = i;
                         ImGui::EndCombo();
                     }
                 }

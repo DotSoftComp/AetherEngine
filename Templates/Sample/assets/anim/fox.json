@@ -1,18 +1,22 @@
 {
-  "animGraph": 1,
-  "start": "idle",
+  "animGraph": 2,
   "parameters": [
     { "name": "Speed", "value": 0 }
   ],
-  "states": [
-    { "id": "idle", "clip": "Survey", "speed": 1, "loop": true, "x": 60, "y": 140 },
-    { "id": "walk", "clip": "Walk", "speed": 1, "loop": true, "x": 320, "y": 60 },
-    { "id": "run", "clip": "Run", "speed": 1, "loop": true, "x": 580, "y": 140 }
-  ],
-  "transitions": [
-    { "from": "idle", "to": "walk", "param": "Speed", "op": ">", "value": 0.2, "blend": 0.25 },
-    { "from": "walk", "to": "idle", "param": "Speed", "op": "<=", "value": 0.2, "blend": 0.25 },
-    { "from": "walk", "to": "run", "param": "Speed", "op": ">", "value": 3.2, "blend": 0.2 },
-    { "from": "run", "to": "walk", "param": "Speed", "op": "<=", "value": 3.2, "blend": 0.2 }
+  "layers": [
+    {
+      "name": "Base", "weight": 1, "weightParam": "", "maskBone": "",
+      "start": "idle",
+      "states": [
+        { "id": "idle", "clip": "Survey", "speed": 1, "loop": true, "x": 60, "y": 140 },
+        { "id": "move", "type": "blend1d", "paramX": "Speed", "speed": 1, "loop": true,
+          "motions": [ { "clip": "Walk", "x": 1.5 }, { "clip": "Run", "x": 4.5 } ],
+          "x": 380, "y": 140 }
+      ],
+      "transitions": [
+        { "from": "idle", "to": "move", "param": "Speed", "op": ">", "value": 0.2, "blend": 0.25 },
+        { "from": "move", "to": "idle", "param": "Speed", "op": "<=", "value": 0.2, "blend": 0.25 }
+      ]
+    }
   ]
 }

@@ -165,33 +165,55 @@ public:
 };
 
 // Renders (and optionally animates) a glTF model at the entity's transform.
-// The Model is owned elsewhere and must outlive the world.
+// The Model is a shared immutable asset owned elsewhere (must outlive the
+// world); this component owns the per-instance ModelPose, so any number of
+// entities can share one Model and animate independently. With `animate` set
+// (and no Animator driving it), plays `clip` looped on world time; an
+// Animator component clears `animate` and writes the pose itself.
 class ModelComponent : public Component {
 public:
     Model* model = nullptr;
     bool animate = true;
+    int clip = 0; // clip index played when no Animator drives the pose
 
     // Project-relative asset path for serialization (resolved via AssetLibrary).
     std::string modelPath;
 
     ModelComponent() = default;
-    explicit ModelComponent(Model* m, bool anim = true) : model(m), animate(anim) {}
+    explicit ModelComponent(Model* m, bool anim = true) : model(m), animate(anim) {
+        if (model) model->initPose(pose_);
+    }
 
     const char* typeName() const override { return "Model"; }
     void reflect(PropertyVisitor& v) override {
         v.visit("path", modelPath, {PropKind::ModelPath, "Model"});
         v.visit("animate", animate, {PropKind::Default, "Animate"});
+        v.visit("clip", clip, {PropKind::Default, "Clip"});
     }
     void onDeserialized(AssetLibrary& assets) override {
         model = modelPath.empty() ? nullptr : assets.model(modelPath);
+        pose_ = ModelPose{};
+        if (model) model->initPose(pose_);
     }
 
+    // Per-instance pose; the Animator (and IK) sample into this.
+    ModelPose& pose() { return pose_; }
+
     void onUpdate(float) override {
-        if (model && animate) model->sample(world().time());
+        if (!model || !animate || model->clipCount() <= 0) return;
+        if (pose_.empty()) model->initPose(pose_);
+        int c = clip >= 0 && clip < model->clipCount() ? clip : 0;
+        float dur = model->clipDuration(c);
+        model->resetPoseLocals(pose_);
+        model->evalClip(c, dur > 0.0f ? std::fmod(world().time(), dur) : 0.0f, pose_);
+        model->finalizePose(pose_);
     }
     void contribute(RenderScene& out) override {
-        if (model) model->emit(out, entity().worldMatrix());
+        if (model) model->emit(out, entity().worldMatrix(), pose_.empty() ? nullptr : &pose_);
     }
+
+private:
+    ModelPose pose_;
 };
 
 } // namespace ae

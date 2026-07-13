@@ -19,6 +19,7 @@
 #include "engine/assets.h"
 #include "engine/scene_io.h"
 #include "engine/project.h"
+#include "engine/doc_gen.h"
 #include "engine/component_registry.h"
 #include "engine/game_module.h"
 #include "engine/engine_modules.h"
@@ -165,6 +166,17 @@ int main(int argc, char** argv) {
         return ok ? 0 : 1;
     }
 
+    // Keep the project's GENERATED reference docs in sync with THIS engine's
+    // live registries. A project carried to a newer/older engine can otherwise
+    // carry stale or missing component/node docs (e.g. after switching the base
+    // engine in the Hub). Write-if-changed, so unchanged projects stay clean;
+    // only the three derived reference files are ever touched. Skipped for
+    // automated screenshot captures.
+    if (!screenshotPath) {
+        std::string docsDir = joinPath(project.root, "Docs");
+        if (pathExists(docsDir)) generateReferenceDocs(docsDir);
+    }
+
     LARGE_INTEGER freq, prev;
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&prev);
@@ -198,7 +210,7 @@ int main(int argc, char** argv) {
 
         editor.frame(dt, 0.0f);
 
-        if (screenshotPath && ++frame >= captureFrames) { captureScreenshot(window, screenshotPath); break; }
+        if (screenshotPath && ++frame >= captureFrames) { captureScreenshot(window.width(), window.height(), screenshotPath); break; }
         window.swapBuffers();
 
         if (benchmark && ++frame >= captureFrames) {

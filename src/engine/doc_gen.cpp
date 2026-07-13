@@ -76,7 +76,27 @@ std::string moduleLabel(int moduleId) {
     return "module " + std::to_string(moduleId);
 }
 
-bool writeComponentsDoc(const std::string& path) {
+// Writes `content` to `path` only when it differs from what's already there, so
+// regenerating on every project open never dirties unchanged files (no git
+// noise). Sets `changed` = true iff the file was actually rewritten.
+bool writeIfChanged(const std::string& path, const std::string& content, bool& changed) {
+    changed = false;
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (in) {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            if (ss.str() == content) return true; // identical — leave it alone
+        }
+    }
+    std::ofstream f(path, std::ios::binary);
+    if (!f) return false;
+    f << content;
+    changed = f.good();
+    return f.good();
+}
+
+bool writeComponentsDoc(const std::string& path, bool& changed) {
     std::ostringstream o;
     o << "# Component reference\n\n"
       << "GENERATED from the live component registry (AetherDocGen) - do not edit.\n"
@@ -110,13 +130,10 @@ bool writeComponentsDoc(const std::string& path) {
         }
     }
 
-    std::ofstream f(path, std::ios::binary);
-    if (!f) return false;
-    f << o.str();
-    return f.good();
+    return writeIfChanged(path, o.str(), changed);
 }
 
-bool writeScriptNodesDoc(const std::string& path) {
+bool writeScriptNodesDoc(const std::string& path, bool& changed) {
     std::ostringstream o;
     o << "# Script-graph node reference\n\n"
       << "GENERATED from the live node registry (AetherDocGen) - do not edit.\n"
@@ -159,13 +176,10 @@ bool writeScriptNodesDoc(const std::string& path) {
         o << "\n";
     }
 
-    std::ofstream f(path, std::ios::binary);
-    if (!f) return false;
-    f << o.str();
-    return f.good();
+    return writeIfChanged(path, o.str(), changed);
 }
 
-bool writeAgentBridgeDoc(const std::string& path) {
+bool writeAgentBridgeDoc(const std::string& path, bool& changed) {
     std::ostringstream o;
     o << "# Agent bridge — driving a LIVE editor\n\n"
       << "GENERATED (AetherDocGen) - do not edit. Method list comes from the same\n"
@@ -198,10 +212,7 @@ bool writeAgentBridgeDoc(const std::string& path) {
       << agentBridgeHelpJson() << "\n"
       << "```\n";
 
-    std::ofstream f(path, std::ios::binary);
-    if (!f) return false;
-    f << o.str();
-    return f.good();
+    return writeIfChanged(path, o.str(), changed);
 }
 
 } // namespace
@@ -211,11 +222,15 @@ bool generateReferenceDocs(const std::string& docsDir) {
     std::string refDir = docsDir + "\\reference";
     CreateDirectoryA(refDir.c_str(), nullptr);
 
-    bool ok = writeComponentsDoc(refDir + "\\components.md");
-    ok = writeScriptNodesDoc(refDir + "\\script-nodes.md") && ok;
-    ok = writeAgentBridgeDoc(refDir + "\\agent-bridge.md") && ok;
-    if (ok) AE_LOG("[Docs] reference generated in %s", refDir.c_str());
-    else AE_ERROR("[Docs] reference generation failed (%s)", refDir.c_str());
+    bool c1 = false, c2 = false, c3 = false;
+    bool ok = writeComponentsDoc(refDir + "\\components.md", c1);
+    ok = writeScriptNodesDoc(refDir + "\\script-nodes.md", c2) && ok;
+    ok = writeAgentBridgeDoc(refDir + "\\agent-bridge.md", c3) && ok;
+    int changed = (c1 ? 1 : 0) + (c2 ? 1 : 0) + (c3 ? 1 : 0);
+    if (!ok) AE_ERROR("[Docs] reference generation failed (%s)", refDir.c_str());
+    else if (changed) AE_LOG("[Docs] reference refreshed in %s (%d file(s) updated)",
+                             refDir.c_str(), changed);
+    else AE_LOG("[Docs] reference already current (%s)", refDir.c_str());
     return ok;
 }
 

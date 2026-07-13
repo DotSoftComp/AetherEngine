@@ -94,11 +94,24 @@ listed and copy its shape (all are covered by editor panels too):
 
 | Asset | Example in this project | Notes |
 |---|---|---|
-| Anim graph | `assets/anim/fox.json` | states (clip/speed/loop) + parameter-conditioned transitions with blend times; parameters set from scripts via `SetAnimParam` |
-| UI document | `assets/ui/hud.json` | widget tree (Panel/Label/Button/ProgressBar) with anchor+pivot layout; `{flag:name}` text binding; Buttons fire the `OnUIButton` script event |
-| Material graph | `assets/materials/energy.json` | dataflow nodes -> PBR output; compiled to GLSL at load; Ctrl+S in the canvas hot-reloads |
+| Anim graph | `assets/anim/fox.json` | layered state machines (`animGraph: 2`): each layer has states + parameter-conditioned transitions with blend times; a state is one clip **or a 1D/2D blend space** (`type: blend1d/blend2d`, `paramX`/`paramY`, `motions: [{clip,x,y,speed}]` weighted live, phase-synced). Overlay layers blend on top with `weight` (or a `weightParam`) and an optional `maskBone` restricting them to that bone's subtree (upper-body aiming). The Animator component can also extract **root motion** (`rootMotion: true`, optional `rootBone`) — the root bone's XZ translation moves the entity instead of the mesh. Pair with a `TwoBoneIK` component (end bone + target entity) for feet/hand placement, applied after animation each frame. Every Model instance owns its pose, so many entities can share one glTF and animate independently; glTF **morph targets** (incl. `weights` animations) play automatically. Parameters set from scripts via `SetAnimParam` |
+| UI document | `assets/ui/hud.json` | widget tree (Panel/Label/Button/ProgressBar/Image) with anchor+pivot layout; per-widget `fontScale` for text; `image` sprite path (project-relative) for Image widgets; `{flag:name}` text binding; Buttons fire the `OnUIButton` script event and support keyboard/gamepad focus navigation (Down/Tab/DpadDown next, Up/DpadUp prev, Enter/Space/A activate) for real menus |
+| Material graph | `assets/materials/energy.json` | dataflow nodes -> PBR output (BaseColor/Metallic/Roughness/Emissive/Opacity/AO + tangent-space **Normal** — feed it from a `NormalMap` node for bumped materials); up to 8 textures per graph; **subgraphs**: a `Subgraph` node inlines another materials/*.json as a function (its `SubInput` nodes = the caller's A-D pins, one `SubOutput` = the result); compiled to GLSL at load; Ctrl+S in the canvas hot-reloads |
 | Input map | `assets/input.json` | named actions (buttons) + axes bound to keys/mouse/gamepad; read via `OnAction`/`IsActionDown`/`GetAxis` and by CharacterController |
 | Missions | `assets/missions/missions.json` | missions/objectives + story flags; scripts read/write flags with `GetFlag`/`SetFlag` |
+
+## Lighting and shadows
+
+The sun (`environment.sunDir`) always casts stabilized cascaded shadows over the
+scene. Local `Light` components cast real-time shadows automatically — no
+per-light setup: the nearest **spot** lights get a perspective shadow map and the
+nearest **point** lights an omnidirectional cube shadow (the arena lamps are
+point lights). A mesh casts into them when its `MeshRenderer.castShadow` is true
+(the same flag the sun uses). Shadow-caster counts are capped and reduced on weak
+GPUs; override with the `spotShadows` / `pointShadows` game settings (or the
+`--spotshadows N` / `--pointshadows N` runtime flags, `0` = off). Directional
+local lights and the sun are shadowed by the cascades; only point/spot use the
+local maps.
 
 ## Verification
 

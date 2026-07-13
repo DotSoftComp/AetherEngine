@@ -14,7 +14,7 @@
 // RIGHT, LMB, RMB, MMB. Pad buttons: see core/gamepad.h (A, B, X, ...,
 // DPAD_RIGHT). Pad axes: LX, LY, RX, RY, LT, RT.
 #pragma once
-#include "../core/window.h"
+#include "../core/input.h"
 #include "../core/gamepad.h"
 #include <string>
 #include <vector>

@@ -1,16 +1,12 @@
-// Aether Engine — Win32 window + OpenGL 4.5 core context + input state.
+// Aether Engine — Win32 window + OpenGL 4.5 core context. Desktop/editor host
+// window: the cross-platform engine core no longer includes this — it reads
+// input through core/input.h. Each host owns its window backend (the editor
+// keeps this Win32 one; the runtime uses an SDL3 backend for portability).
 #pragma once
 #include "../gl/gl_api.h"
+#include "input.h"
 
 namespace ae {
-
-struct Input {
-    bool keys[256] = {};
-    bool mouseButtons[3] = {};
-    float mouseX = 0, mouseY = 0;
-    float mouseDX = 0, mouseDY = 0;   // per-frame deltas, reset each poll
-    float wheelDelta = 0;
-};
 
 // Frame style:
 //   System     — the normal OS title bar + borders (dev/tools default).

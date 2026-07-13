@@ -4,7 +4,9 @@ in vec2 vUV;
 out vec4 fragColor;
 
 layout(binding = 0) uniform sampler2D texSrc;
-uniform float uRadius;
+layout(std140, binding = 15) uniform U {
+    float uRadius;
+};
 
 void main() {
     vec2 t = uRadius / vec2(textureSize(texSrc, 0));

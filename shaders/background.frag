@@ -7,8 +7,10 @@ layout(location = 1) out vec4 outAmbient;
 layout(location = 2) out vec4 outNormal;
 
 layout(binding = 0) uniform samplerCube texEnv;
-uniform mat4 uInvViewProj;
-uniform vec3 uCamPos;
+layout(std140, binding = 15) uniform U {
+    mat4 uInvViewProj;
+    vec3 uCamPos;
+};
 
 void main() {
     vec4 world = uInvViewProj * vec4(vUV * 2.0 - 1.0, 1.0, 1.0);

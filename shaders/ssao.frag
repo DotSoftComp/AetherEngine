@@ -7,13 +7,15 @@ layout(binding = 0) uniform sampler2D texDepth;
 layout(binding = 1) uniform sampler2D texNormal;   // view-space, packed 0..1
 layout(binding = 2) uniform sampler2D texNoise;    // 4x4 rotation vectors
 
-uniform mat4 uProj;
-uniform mat4 uInvProj;
-uniform float uProjA;      // proj[2][2]
-uniform float uProjB;      // proj[3][2]
-uniform vec2 uNoiseScale;
 const int KERNEL_SIZE = 16;
-uniform vec3 uKernel[KERNEL_SIZE];
+layout(std140, binding = 15) uniform U {
+    mat4 uProj;
+    mat4 uInvProj;
+    float uProjA;
+    float uProjB;
+    vec2 uNoiseScale;
+    vec3 uKernel[KERNEL_SIZE];
+};
 
 const float RADIUS = 0.6;
 const float BIAS = 0.02;

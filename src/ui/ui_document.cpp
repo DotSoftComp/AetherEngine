@@ -47,9 +47,17 @@ static std::string substitute(const std::string& text,
     return out;
 }
 
+void uiFocusables(const UIWidget& w, std::vector<std::string>& out) {
+    if (!w.visible) return;
+    if (w.type == "Button" && !w.id.empty()) out.push_back(w.id);
+    for (const auto& c : w.children) uiFocusables(c, out);
+}
+
 static void drawWidget(UI& ui, const UIWidget& w, const Rect& parent,
                        const std::function<int(const std::string&)>& flagValue,
-                       std::vector<std::string>* clickedOut, bool isRoot = false) {
+                       std::vector<std::string>* clickedOut,
+                       const std::function<unsigned(const std::string&)>& imageResolver,
+                       const std::string* focusedId, bool isRoot = false) {
     if (!w.visible) return;
     // The root IS the screen: it always spans the full area so child anchors
     // (0..1) reference the real resolution.
@@ -57,18 +65,28 @@ static void drawWidget(UI& ui, const UIWidget& w, const Rect& parent,
 
     auto col = [](const Vec4& c) { return rgba(c.x, c.y, c.z, c.w); };
 
-    if (w.bg.w > 0.001f) ui.rectFill(r, col(w.bg));
+    if (w.bg.w > 0.001f && w.type != "Button") ui.rectFill(r, col(w.bg));
 
     if (w.type == "Label") {
         std::string s = substitute(w.text, flagValue);
-        ui.textCentered(r, s.c_str(), col(w.color));
+        ui.textCentered(r, s.c_str(), col(w.color), w.fontScale);
     } else if (w.type == "Button") {
         std::string s = substitute(w.text, flagValue);
+        bool over = r.contains(ui.mouseX(), ui.mouseY());
+        bool focused = focusedId && *focusedId == w.id;
         uint32_t base = w.bg.w > 0.001f ? col(w.bg) : rgba(0.16f, 0.15f, 0.22f, 0.92f);
-        uint32_t hover = rgba(clampf(w.bg.x + 0.12f, 0, 1), clampf(w.bg.y + 0.12f, 0, 1),
-                              clampf(w.bg.z + 0.16f, 0, 1), 0.96f);
-        if (ui.button(&w, r, s.c_str(), base, hover) && clickedOut)
-            clickedOut->push_back(w.id);
+        uint32_t hi = rgba(clampf(w.bg.x + 0.12f, 0, 1), clampf(w.bg.y + 0.12f, 0, 1),
+                           clampf(w.bg.z + 0.16f, 0, 1), 0.96f);
+        // Keyboard/gamepad focus reads distinctly from mouse hover: a violet
+        // accent fill + a bright ring, so it's legible from across the room.
+        if (focused) {
+            ui.rectFill(r, rgba(0.34f, 0.27f, 0.58f, 0.96f));
+            ui.rectLine(r, rgba(0.78f, 0.68f, 1.0f, 1.0f), 3.0f);
+        } else {
+            ui.rectFill(r, over ? hi : base);
+        }
+        ui.textCentered(r, s.c_str(), col(w.color), w.fontScale);
+        if (over && ui.mousePressed() && clickedOut) clickedOut->push_back(w.id);
     } else if (w.type == "ProgressBar") {
         uint32_t track = w.bg.w > 0.001f ? col(w.bg) : rgba(0.10f, 0.10f, 0.14f, 0.85f);
         ui.rectFill(r, track);
@@ -79,16 +97,23 @@ static void drawWidget(UI& ui, const UIWidget& w, const Rect& parent,
         fill.w *= v;
         if (fill.w > 0.5f) ui.rectFill(fill, col(w.color));
         ui.rectLine(r, rgba(1, 1, 1, 0.25f));
+    } else if (w.type == "Image") {
+        unsigned tex = imageResolver ? imageResolver(w.image) : 0;
+        if (tex) ui.image(r, tex, false);
+        else ui.rectLine(r, rgba(1, 0, 1, 0.6f)); // magenta outline = missing sprite
     }
     // Panel: background only (drawn above), children below.
 
-    for (const auto& c : w.children) drawWidget(ui, c, r, flagValue, clickedOut);
+    for (const auto& c : w.children)
+        drawWidget(ui, c, r, flagValue, clickedOut, imageResolver, focusedId);
 }
 
 void drawUIDocument(UI& ui, const UIWidget& root, const Rect& area,
                     const std::function<int(const std::string&)>& flagValue,
-                    std::vector<std::string>* clickedOut) {
-    drawWidget(ui, root, area, flagValue, clickedOut, /*isRoot=*/true);
+                    std::vector<std::string>* clickedOut,
+                    const std::function<unsigned(const std::string&)>& imageResolver,
+                    const std::string* focusedId) {
+    drawWidget(ui, root, area, flagValue, clickedOut, imageResolver, focusedId, /*isRoot=*/true);
 }
 
 // ---- (de)serialization ----------------------------------------------------------
@@ -115,6 +140,8 @@ static void writeWidget(std::ostringstream& o, const UIWidget& w, int depth) {
       << ", " << w.bg.w << "]";
     if (!w.bindFlag.empty()) o << ", \"bindFlag\": \"" << esc(w.bindFlag) << "\"";
     if (w.barMax != 1.0f) o << ", \"barMax\": " << w.barMax;
+    if (!w.image.empty()) o << ", \"image\": \"" << esc(w.image) << "\"";
+    if (w.fontScale != 1.0f) o << ", \"fontScale\": " << w.fontScale;
     if (!w.children.empty()) {
         o << ",\n" << ind << "  \"children\": [\n";
         for (size_t i = 0; i < w.children.size(); ++i) {
@@ -165,6 +192,8 @@ static void readWidget(const JsonValue& j, UIWidget& w) {
     w.bg = readVec4(j.find("bg"), w.bg);
     if (const std::string* s = j.string("bindFlag")) w.bindFlag = *s;
     w.barMax = (float)j.num("barMax", 1.0);
+    if (const std::string* s = j.string("image")) w.image = *s;
+    w.fontScale = (float)j.num("fontScale", 1.0);
     if (const JsonValue* kids = j.find("children")) {
         for (size_t i = 0; i < kids->size(); ++i) {
             UIWidget c;

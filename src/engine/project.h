@@ -46,4 +46,11 @@ bool createProjectFromTemplate(const std::string& templateDir, const std::string
                                const std::string& name, const std::string& engineVersion,
                                std::string* outProjectFile, std::string* outError);
 
+// Re-pins a project to a different engine version by editing ONLY the
+// `engineVersion` value in the manifest text — every other field, unknown key,
+// and the file's formatting is preserved (a full load/save would rewrite the
+// whole manifest). Used by the Hub's "change base engine" action.
+bool setProjectEngineVersion(const std::string& projFile, const std::string& version,
+                             std::string* outError = nullptr);
+
 } // namespace ae

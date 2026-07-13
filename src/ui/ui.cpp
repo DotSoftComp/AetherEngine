@@ -166,22 +166,22 @@ void UI::gradientV(const Rect& r, uint32_t top, uint32_t bottom) {
     cmds_.back().count += 6;
 }
 
-void UI::text(float x, float y, const char* s, uint32_t color, float spacing) {
+void UI::text(float x, float y, const char* s, uint32_t color, float spacing, float scale) {
     unsigned atlas = font_->atlas();
     float penX = x;
     for (; *s; ++s) {
         const Glyph& g = font_->glyph(*s);
         if (g.w > 0 && *s != ' ')
-            quad(atlas, {penX, y, g.w, g.h}, g.u0, g.v0, g.u1, g.v1, color);
-        penX += g.advance + spacing;
+            quad(atlas, {penX, y, g.w * scale, g.h * scale}, g.u0, g.v0, g.u1, g.v1, color);
+        penX += (g.advance + spacing) * scale;
     }
 }
 
-void UI::textCentered(const Rect& r, const char* s, uint32_t color) {
-    float tw = font_->textWidth(s);
+void UI::textCentered(const Rect& r, const char* s, uint32_t color, float scale) {
+    float tw = font_->textWidth(s) * scale;
     float tx = r.x + (r.w - tw) * 0.5f;
-    float ty = r.y + (r.h - font_->lineHeight()) * 0.5f;
-    text(tx, ty, s, color);
+    float ty = r.y + (r.h - font_->lineHeight() * scale) * 0.5f;
+    text(tx, ty, s, color, 0.0f, scale);
 }
 
 float UI::measureText(const char* s, float spacing) const {

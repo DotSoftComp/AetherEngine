@@ -7,7 +7,7 @@ file(GLOB_RECURSE AE_SCRIPT_SOURCES CONFIGURE_DEPENDS
      ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 add_library(GameModule SHARED ${AE_SCRIPT_SOURCES})
 target_include_directories(GameModule PRIVATE "C:/Users/proprietaire/Documents/Fork/ChooseEngine/src")
-target_link_libraries(GameModule PRIVATE "C:/Users/proprietaire/Documents/Fork/ChooseEngine/build/Release/AetherCore.lib")
+target_link_libraries(GameModule PRIVATE "C:/Users/proprietaire/Documents/Fork/ChooseEngine/build/bin/Release/AetherCore.lib")
 if(MSVC)
     target_compile_options(GameModule PRIVATE /W3 /permissive- /MP)
 endif()

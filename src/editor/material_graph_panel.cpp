@@ -14,6 +14,10 @@
 
 namespace ae {
 
+// A node offers an output pin iff it can emit an expression (Output and
+// SubOutput are pure sinks).
+static bool hasOutPin(const MGNodeDef* d) { return d && d->emit != nullptr; }
+
 bool MaterialGraphPanel::createStarterGraph(const std::string& path) {
     MaterialGraph g;
     MGNode out;
@@ -223,7 +227,7 @@ void MaterialGraphPanel::drawCanvas() {
         return IM_COL32(70, 125, 115, 255); // Math
     };
     auto rowsOf = [&](const MGNodeDef* d) {
-        return d ? (int)d->in.size() + (d->category != "Output" ? 1 : 0) : 1;
+        return d ? (int)d->in.size() + (hasOutPin(d) ? 1 : 0) : 1;
     };
     auto nodeTopLeft = [&](const MGNode& n) {
         return ImVec2(origin.x + pan_.x + n.x * zoom_, origin.y + pan_.y + n.y * zoom_);
@@ -293,7 +297,7 @@ void MaterialGraphPanel::drawCanvas() {
                             IM_COL32(190, 193, 202, 255), row);
                 y += rowH;
             }
-            if (d->category != "Output") {
+            if (hasOutPin(d)) {
                 ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(fs * 0.85f, FLT_MAX, 0, "out");
                 dl->AddText(font, fs * 0.85f, ImVec2(br.x - ts.x - 12 * zoom_, y),
                             (ImU32)mgTypeColor(d->out), "out");
@@ -359,7 +363,7 @@ void MaterialGraphPanel::drawCanvas() {
                     dl->AddCircle(p, 6.0f * zoom_, IM_COL32(255, 255, 255, 220), 0, 1.5f);
                 ImGui::PopID();
             }
-            if (d->category != "Output") { // output pin
+            if (hasOutPin(d)) { // output pin
                 ImVec2 p = outPinPos(n, d);
                 dl->AddCircleFilled(p, 4.0f * zoom_, (ImU32)mgTypeColor(d->out));
                 ImGui::SetCursorScreenPos(ImVec2(p.x - 7 * zoom_, p.y - 7 * zoom_));

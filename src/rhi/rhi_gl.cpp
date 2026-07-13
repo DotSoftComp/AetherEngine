@@ -7,6 +7,10 @@
 #include "rhi.h"
 #include "../gl/gl_api.h"
 #include "../core/log.h"
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace ae {
@@ -163,6 +167,12 @@ GeometryHandle createGeometry(const GeometryDesc& d) {
     return {slot};
 }
 
+void updateGeometryVertices(GeometryHandle h, const void* data, size_t bytes) {
+    if (!h.valid() || h.id >= geometries().size()) return;
+    GLGeometry& g = geometries()[h.id];
+    if (g.alive && g.vbo) glNamedBufferSubData(g.vbo, 0, (GLsizeiptr)bytes, data);
+}
+
 void destroyGeometry(GeometryHandle& h) {
     if (!h.valid() || h.id >= geometries().size()) return;
     GLGeometry& g = geometries()[h.id];
@@ -175,8 +185,11 @@ void destroyGeometry(GeometryHandle& h) {
     h.id = 0;
 }
 
+namespace { void flushAutoUBO(); } // defined with the shader/auto-UBO code below
+
 void draw(GeometryHandle h, unsigned indexCount, int instances) {
     if (!h.valid() || h.id >= geometries().size()) return;
+    flushAutoUBO();
     const GLGeometry& g = geometries()[h.id];
     glBindVertexArray(g.vao);
     if (instances > 1)
@@ -452,6 +465,7 @@ void setStreamData(StreamHandle h, const void* data, size_t bytes) {
 
 void drawStream(StreamHandle h, Topology topology, int firstVertex, int vertexCount) {
     if (!h.valid() || h.id >= streams().size()) return;
+    flushAutoUBO();
     glBindVertexArray(streams()[h.id].vao);
     glDrawArrays(topology == Topology::Lines ? GL_LINES : GL_TRIANGLES, firstVertex,
                  vertexCount);
@@ -469,6 +483,7 @@ void destroyStream(StreamHandle& h) {
 }
 
 void drawFullscreen() {
+    flushAutoUBO();
     static GLuint s_vao = 0;
     if (!s_vao) glCreateVertexArrays(1, &s_vao);
     glBindVertexArray(s_vao);
@@ -478,13 +493,108 @@ void drawFullscreen() {
 // ---- shaders --------------------------------------------------------------------
 
 namespace {
+// Auto-UBO: shaders that wrapped their formerly default-block uniforms in a
+// `layout(std140, binding = kAutoUniformBinding) uniform U { ... }` block get
+// that block reflected here, so the renderer's setUniform*(name) calls keep
+// working (Vulkan has no default-block uniforms). Writes land in a CPU shadow
+// flushed to the UBO before each draw. Un-converted shaders keep the plain
+// glUniform path. Binding 15 is clear of every shader's sampler bindings (max 9).
+static const GLuint kAutoUniformBinding = 15;
+// Encoded uniformLocation() for a block member: bit30 = tag, bits0-15 = member
+// index, bits16-29 = array element index (the renderer sets light arrays
+// element-wise as uLightParams[i]).
+static const int kAutoLocBit = 0x40000000;
+static const int kAutoMemberMask = 0xFFFF;
+static inline unsigned autoMember(int loc) { return (unsigned)(loc & kAutoMemberMask); }
+static inline unsigned autoElem(int loc) { return (unsigned)((loc >> 16) & 0x3FFF); }
+
+struct GLUniformMember {
+    GLint offset = 0;
+    GLint arrayStride = 0; // std140: 16 for float/vec arrays, 64 for mat4 arrays
+};
+
 struct GLShader {
     GLuint program = 0;
     bool alive = false;
+    GLuint autoUBO = 0;
+    std::vector<uint8_t> autoShadow;
+    std::vector<GLUniformMember> members;             // indexed by encoded loc
+    std::unordered_map<std::string, int> memberIndex; // name -> members[] index
+    bool autoDirty = false;
 };
 std::vector<GLShader>& shaders() {
     static std::vector<GLShader> t(1);
     return t;
+}
+static unsigned g_currentShader = 0; // ShaderHandle id bound by useShader
+
+// Reflect the "U" uniform block (if present) into member offsets/strides.
+static void reflectAutoUBO(GLShader& sh) {
+    GLuint block = glGetUniformBlockIndex(sh.program, "U");
+    if (block == GL_INVALID_INDEX) return;
+    glUniformBlockBinding(sh.program, block, kAutoUniformBinding);
+    GLint dataSize = 0, count = 0;
+    glGetActiveUniformBlockiv(sh.program, block, GL_UNIFORM_BLOCK_DATA_SIZE, &dataSize);
+    glGetActiveUniformBlockiv(sh.program, block, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &count);
+    if (dataSize <= 0 || count <= 0) return;
+    std::vector<GLint> idx(count);
+    glGetActiveUniformBlockiv(sh.program, block, GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES, idx.data());
+    sh.autoShadow.assign(dataSize, 0);
+    glCreateBuffers(1, &sh.autoUBO);
+    glNamedBufferData(sh.autoUBO, dataSize, nullptr, GL_DYNAMIC_DRAW);
+    for (int i = 0; i < count; ++i) {
+        GLuint u = (GLuint)idx[i];
+        GLint offset = 0, arrStride = 0;
+        glGetActiveUniformsiv(sh.program, 1, &u, GL_UNIFORM_OFFSET, &offset);
+        glGetActiveUniformsiv(sh.program, 1, &u, GL_UNIFORM_ARRAY_STRIDE, &arrStride);
+        char name[128] = {};
+        GLsizei len = 0;
+        glGetActiveUniformName(sh.program, u, sizeof(name), &len, name);
+        std::string n(name, len > 0 ? (size_t)len : 0);
+        size_t br = n.find('['); // "uArr[0]" -> "uArr"
+        if (br != std::string::npos) n = n.substr(0, br);
+        sh.memberIndex[n] = (int)sh.members.size();
+        sh.members.push_back({offset, arrStride});
+    }
+}
+
+static void writeAuto(int loc, const void* data, int bytes) {
+    GLShader& sh = shaders()[g_currentShader];
+    unsigned mi = autoMember(loc);
+    if (mi >= sh.members.size()) return; // loc from a differently-bound shader
+    const GLUniformMember& m = sh.members[mi];
+    int at = m.offset + (int)autoElem(loc) * (m.arrayStride > 0 ? m.arrayStride : 0);
+    if (at >= 0 && at + bytes <= (int)sh.autoShadow.size())
+        std::memcpy(sh.autoShadow.data() + at, data, bytes);
+    sh.autoDirty = true;
+}
+// Whole-array write honoring std140 element stride; `elemFloats` floats per
+// element, `elemBytes` written per element (vec3 = 3 floats / 12 bytes into a
+// 16-byte stride). Starts at the loc's element (usually 0).
+static void writeAutoArray(int loc, const float* v, int count, int elemFloats, int elemBytes) {
+    GLShader& sh = shaders()[g_currentShader];
+    unsigned mi = autoMember(loc);
+    if (mi >= sh.members.size()) return;
+    const GLUniformMember& m = sh.members[mi];
+    int stride = m.arrayStride > 0 ? m.arrayStride : elemBytes;
+    int base = m.offset + (int)autoElem(loc) * stride;
+    for (int i = 0; i < count; ++i) {
+        int at = base + i * stride;
+        if (at >= 0 && at + elemBytes <= (int)sh.autoShadow.size())
+            std::memcpy(sh.autoShadow.data() + at, v + i * elemFloats, elemBytes);
+    }
+    sh.autoDirty = true;
+}
+// Bind + upload the current shader's auto-UBO before a draw (no-op otherwise).
+void flushAutoUBO() {
+    if (g_currentShader >= shaders().size()) return;
+    GLShader& sh = shaders()[g_currentShader];
+    if (!sh.autoUBO) return;
+    if (sh.autoDirty) {
+        glNamedBufferSubData(sh.autoUBO, 0, (GLsizeiptr)sh.autoShadow.size(), sh.autoShadow.data());
+        sh.autoDirty = false;
+    }
+    glBindBufferBase(GL_UNIFORM_BUFFER, kAutoUniformBinding, sh.autoUBO);
 }
 
 GLuint compileStage(GLenum type, const std::string& src, const char* label) {
@@ -505,8 +615,20 @@ GLuint compileStage(GLenum type, const std::string& src, const char* label) {
 }
 } // namespace
 
-ShaderHandle createShader(const std::string& vsSource, const std::string& fsSource,
+// Cross-backend builtin shim: shaders use AE_VID/AE_IID; GL maps them to the
+// desktop-GL names, the Vulkan backend will map them to gl_VertexIndex/
+// gl_InstanceIndex. Injected right after the "#version" line.
+static std::string withCompatDefines(const std::string& src) {
+    size_t nl = src.find('\n'); // end of the #version line
+    if (nl == std::string::npos) return src;
+    return src.substr(0, nl + 1) +
+           "#define AE_VID gl_VertexID\n#define AE_IID gl_InstanceID\n" + src.substr(nl + 1);
+}
+
+ShaderHandle createShader(const std::string& vsSrcIn, const std::string& fsSrcIn,
                           const char* debugLabel) {
+    std::string vsSource = withCompatDefines(vsSrcIn);
+    std::string fsSource = withCompatDefines(fsSrcIn);
     GLuint vs = compileStage(GL_VERTEX_SHADER, vsSource, debugLabel);
     GLuint fs = compileStage(GL_FRAGMENT_SHADER, fsSource, debugLabel);
     if (!vs || !fs) {
@@ -533,11 +655,13 @@ ShaderHandle createShader(const std::string& vsSource, const std::string& fsSour
     GLShader& sh = shaders()[slot];
     sh.alive = true;
     sh.program = program;
+    reflectAutoUBO(sh);
     return {slot};
 }
 
 void useShader(ShaderHandle h) {
-    glUseProgram(h.valid() && h.id < shaders().size() ? shaders()[h.id].program : 0);
+    g_currentShader = (h.valid() && h.id < shaders().size()) ? h.id : 0;
+    glUseProgram(shaders()[g_currentShader].program);
 }
 
 void destroyShader(ShaderHandle& h) {
@@ -545,6 +669,7 @@ void destroyShader(ShaderHandle& h) {
     GLShader& sh = shaders()[h.id];
     if (sh.alive) {
         if (sh.program) glDeleteProgram(sh.program);
+        if (sh.autoUBO) glDeleteBuffers(1, &sh.autoUBO);
         sh = {};
     }
     h.id = 0;
@@ -552,21 +677,53 @@ void destroyShader(ShaderHandle& h) {
 
 int uniformLocation(ShaderHandle h, const char* name) {
     if (!h.valid() || h.id >= shaders().size()) return -1;
-    return glGetUniformLocation(shaders()[h.id].program, name);
+    GLShader& sh = shaders()[h.id];
+    if (sh.autoUBO) {
+        // Split "uLightParams[2]" into base name + element index.
+        std::string n = name;
+        int elem = 0;
+        size_t br = n.find('[');
+        if (br != std::string::npos) {
+            elem = std::atoi(n.c_str() + br + 1);
+            n.resize(br);
+        }
+        auto it = sh.memberIndex.find(n);
+        if (it != sh.memberIndex.end())
+            return kAutoLocBit | (it->second & kAutoMemberMask) | ((elem & 0x3FFF) << 16);
+    }
+    return glGetUniformLocation(sh.program, name);
 }
 
-void setUniform1i(int loc, int v) { glUniform1i(loc, v); }
-void setUniform1f(int loc, float v) { glUniform1f(loc, v); }
-void setUniform2f(int loc, float x, float y) { glUniform2f(loc, x, y); }
-void setUniform3f(int loc, float x, float y, float z) { glUniform3f(loc, x, y, z); }
+void setUniform1i(int loc, int v) {
+    if (loc >= 0 && (loc & kAutoLocBit)) writeAuto(loc, &v, 4); else glUniform1i(loc, v);
+}
+void setUniform1f(int loc, float v) {
+    if (loc >= 0 && (loc & kAutoLocBit)) writeAuto(loc, &v, 4); else glUniform1f(loc, v);
+}
+void setUniform2f(int loc, float x, float y) {
+    if (loc >= 0 && (loc & kAutoLocBit)) { float v[2] = {x, y}; writeAuto(loc, v, 8); }
+    else glUniform2f(loc, x, y);
+}
+void setUniform3f(int loc, float x, float y, float z) {
+    if (loc >= 0 && (loc & kAutoLocBit)) { float v[3] = {x, y, z}; writeAuto(loc, v, 12); }
+    else glUniform3f(loc, x, y, z);
+}
 void setUniform4f(int loc, float x, float y, float z, float w) {
-    glUniform4f(loc, x, y, z, w);
+    if (loc >= 0 && (loc & kAutoLocBit)) { float v[4] = {x, y, z, w}; writeAuto(loc, v, 16); }
+    else glUniform4f(loc, x, y, z, w);
 }
 void setUniformMat4(int loc, const float* m16, int count) {
-    glUniformMatrix4fv(loc, count, GL_FALSE, m16);
+    // std140 mat4 is 64 contiguous bytes (array stride 64), so a straight copy
+    // matches whether count is 1 or an array.
+    if (loc >= 0 && (loc & kAutoLocBit)) writeAuto(loc, m16, 64 * count);
+    else glUniformMatrix4fv(loc, count, GL_FALSE, m16);
 }
-void setUniform1fv(int loc, const float* v, int count) { glUniform1fv(loc, count, v); }
-void setUniform3fv(int loc, const float* v, int count) { glUniform3fv(loc, count, v); }
+void setUniform1fv(int loc, const float* v, int count) {
+    if (loc >= 0 && (loc & kAutoLocBit)) writeAutoArray(loc, v, count, 1, 4); else glUniform1fv(loc, count, v);
+}
+void setUniform3fv(int loc, const float* v, int count) {
+    if (loc >= 0 && (loc & kAutoLocBit)) writeAutoArray(loc, v, count, 3, 12); else glUniform3fv(loc, count, v);
+}
 
 // ---- GPU timers ----------------------------------------------------------------
 

@@ -1,4 +1,5 @@
 #include "gltf.h"
+#include <algorithm>
 #include <cctype>
 #include "image.h"
 #include "../core/json.h"
@@ -187,20 +188,6 @@ struct Loader {
     }
 };
 
-// Normalized quaternion lerp with hemisphere correction (nlerp ~ slerp for
-// the small per-keyframe angles found in animation data).
-Vec4 nlerpQuat(const Vec4& a, const Vec4& b, float t) {
-    float d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-    float sign = d < 0.0f ? -1.0f : 1.0f;
-    Vec4 r(a.x + (b.x * sign - a.x) * t,
-           a.y + (b.y * sign - a.y) * t,
-           a.z + (b.z * sign - a.z) * t,
-           a.w + (b.w * sign - a.w) * t);
-    float len = std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w);
-    if (len < 1e-8f) return Vec4(0, 0, 0, 1);
-    return Vec4(r.x / len, r.y / len, r.z / len, r.w / len);
-}
-
 } // namespace
 
 bool Model::load(const char* path) {
@@ -359,10 +346,15 @@ bool Model::loadGltf(const char* path) {
     // ---- meshes: one engine Mesh per primitive ----
     const JsonValue* meshesJson = doc.find("meshes");
     std::vector<std::vector<std::pair<int, int>>> primitiveIndex(meshesJson ? meshesJson->size() : 0);
+    std::vector<int> meshTargetCount(meshesJson ? meshesJson->size() : 0, 0);
+    std::vector<std::vector<float>> meshDefaultWeights(meshesJson ? meshesJson->size() : 0);
     if (meshesJson) {
         for (size_t mi = 0; mi < meshesJson->size(); ++mi) {
             const JsonValue* prims = (*meshesJson)[mi].find("primitives");
             if (!prims) continue;
+            if (const JsonValue* dw = (*meshesJson)[mi].find("weights"))
+                for (size_t w = 0; w < dw->size(); ++w)
+                    meshDefaultWeights[mi].push_back((float)(*dw)[w].number);
             for (size_t pi = 0; pi < prims->size(); ++pi) {
                 const JsonValue& prim = (*prims)[pi];
                 if (prim.integer("mode", 4) != 4) continue;
@@ -426,9 +418,44 @@ bool Model::loadGltf(const char* path) {
 
                 if (!tan.valid()) computeTangents(data);
 
+                // Morph targets: POSITION/NORMAL deltas per target, CPU-blended
+                // into per-instance dynamic meshes at pose finalize.
+                const JsonValue* targetsJson = prim.find("targets");
+                bool hasTargets = targetsJson && targetsJson->size() > 0;
                 meshes_.emplace_back();
-                meshes_.back().upload(data);
-                primitiveIndex[mi].push_back({(int)meshes_.size() - 1, prim.integer("material", -1)});
+                meshes_.back().upload(data, hasTargets);
+                int engineMesh = (int)meshes_.size() - 1;
+                if (hasTargets) {
+                    meshTargetCount[mi] =
+                        std::max(meshTargetCount[mi], (int)targetsJson->size());
+                    MorphData md;
+                    for (size_t ti = 0; ti < targetsJson->size(); ++ti) {
+                        const JsonValue& tj = (*targetsJson)[ti];
+                        MorphData::Target tg;
+                        AccessorView dp = loader.accessor(tj.integer("POSITION", -1));
+                        if (dp.valid()) {
+                            tg.dpos.resize(dp.count);
+                            for (size_t v = 0; v < dp.count; ++v) {
+                                float tmp[3];
+                                dp.readFloats(v, tmp, 3);
+                                tg.dpos[v] = Vec3(tmp[0], tmp[1], tmp[2]);
+                            }
+                        }
+                        AccessorView dn = loader.accessor(tj.integer("NORMAL", -1));
+                        if (dn.valid()) {
+                            tg.dnrm.resize(dn.count);
+                            for (size_t v = 0; v < dn.count; ++v) {
+                                float tmp[3];
+                                dn.readFloats(v, tmp, 3);
+                                tg.dnrm[v] = Vec3(tmp[0], tmp[1], tmp[2]);
+                            }
+                        }
+                        md.targets.push_back(std::move(tg));
+                    }
+                    md.base = std::move(data);
+                    morphs_[engineMesh] = std::move(md);
+                }
+                primitiveIndex[mi].push_back({engineMesh, prim.integer("material", -1)});
             }
         }
     }
@@ -440,6 +467,7 @@ bool Model::loadGltf(const char* path) {
         for (size_t i = 0; i < nodesJson->size(); ++i) {
             const JsonValue& nj = (*nodesJson)[i];
             Node& n = nodes_[i];
+            if (const std::string* nm = nj.string("name")) n.name = *nm;
             if (const JsonValue* m = nj.find("matrix")) {
                 if (m->size() == 16) {
                     n.hasMatrix = true;
@@ -477,6 +505,17 @@ bool Model::loadGltf(const char* path) {
                     d.material = material;
                     d.skin = nj.integer("skin", -1);
                     draws_.push_back(d);
+                }
+                // Default morph weights: node override, else mesh, else zeros.
+                if (meshTargetCount[meshIndex] > 0) {
+                    std::vector<float> dw(meshTargetCount[meshIndex], 0.0f);
+                    const JsonValue* nw = nj.find("weights");
+                    const std::vector<float>& mw = meshDefaultWeights[meshIndex];
+                    for (size_t w = 0; w < dw.size(); ++w) {
+                        if (nw && w < nw->size()) dw[w] = (float)(*nw)[w].number;
+                        else if (w < mw.size()) dw[w] = mw[w];
+                    }
+                    morphDefaults_[(int)i] = std::move(dw);
                 }
             }
         }
@@ -528,7 +567,8 @@ bool Model::loadGltf(const char* path) {
                 if (*pathStr == "translation") path = 0;
                 else if (*pathStr == "rotation") path = 1;
                 else if (*pathStr == "scale") path = 2;
-                else continue; // morph weights unsupported
+                else if (*pathStr == "weights") path = 3;
+                else continue;
 
                 int samplerIdx = cj.integer("sampler", -1);
                 if (samplerIdx < 0 || (size_t)samplerIdx >= samplers->size()) continue;
@@ -541,16 +581,37 @@ bool Model::loadGltf(const char* path) {
                 if (interp && *interp == "STEP") ch.interp = 1;
                 else if (interp && *interp == "CUBICSPLINE") ch.interp = 2;
 
+                int comp = path == 1 ? 4 : 3;
+                if (path == 3) {
+                    // One float per morph target per key (SCALAR accessor).
+                    int meshIdx = nodesJson && ch.node >= 0 && (size_t)ch.node < nodesJson->size()
+                                      ? (*nodesJson)[ch.node].integer("mesh", -1)
+                                      : -1;
+                    comp = meshIdx >= 0 && (size_t)meshIdx < meshTargetCount.size()
+                               ? meshTargetCount[meshIdx]
+                               : 0;
+                    if (comp <= 0) continue;
+                }
+                ch.comp = comp;
+
                 AccessorView input = loader.accessor(sj.integer("input", -1));
                 AccessorView output = loader.accessor(sj.integer("output", -1));
                 if (!input.valid() || !output.valid()) continue;
                 ch.times.resize(input.count);
                 for (size_t k = 0; k < input.count; ++k)
                     input.readFloats(k, &ch.times[k], 1);
-                int comp = path == 1 ? 4 : 3;
-                ch.values.resize(output.count * comp);
-                for (size_t k = 0; k < output.count; ++k)
-                    output.readFloats(k, &ch.values[k * comp], comp);
+                if (path == 3) {
+                    ch.values.resize(output.count);
+                    for (size_t k = 0; k < output.count; ++k)
+                        output.readFloats(k, &ch.values[k], 1);
+                } else {
+                    ch.values.resize(output.count * comp);
+                    for (size_t k = 0; k < output.count; ++k)
+                        output.readFloats(k, &ch.values[k * comp], comp);
+                }
+                // Guard against inconsistent key/value counts (drop, don't crash).
+                size_t keyStride = ch.interp == 2 ? (size_t)comp * 3 : (size_t)comp;
+                if (ch.values.size() < ch.times.size() * keyStride) continue;
                 if (!ch.times.empty())
                     clip.duration = std::fmax(clip.duration, ch.times.back());
                 clip.channels.push_back(std::move(ch));
@@ -590,47 +651,6 @@ void Model::computeWorlds() {
     }
 }
 
-void Model::sample(float time) {
-    if (clips_.empty() || activeClip_ < 0 || (size_t)activeClip_ >= clips_.size()) return;
-    const Clip& clip = clips_[activeClip_];
-    float t = clip.duration > 0 ? std::fmod(time, clip.duration) : 0.0f;
-
-    for (const Channel& ch : clip.channels) {
-        if (ch.node < 0 || (size_t)ch.node >= nodes_.size() || ch.times.empty()) continue;
-        Node& n = nodes_[ch.node];
-        n.hasMatrix = false; // animated nodes always use TRS
-
-        // Locate the keyframe segment (times are sorted ascending).
-        size_t k = 0;
-        while (k + 1 < ch.times.size() && ch.times[k + 1] < t) ++k;
-        size_t k1 = k + 1 < ch.times.size() ? k + 1 : k;
-        float t0 = ch.times[k], t1 = ch.times[k1];
-        float f = (ch.interp == 1 || t1 <= t0) ? 0.0f : clampf((t - t0) / (t1 - t0), 0.0f, 1.0f);
-
-        int comp = ch.path == 1 ? 4 : 3;
-        // CUBICSPLINE stores in-tangent/value/out-tangent triplets; sample values.
-        int keyStride = ch.interp == 2 ? comp * 3 : comp;
-        int valueOffset = ch.interp == 2 ? comp : 0;
-        const float* v0 = &ch.values[k * keyStride + valueOffset];
-        const float* v1 = &ch.values[k1 * keyStride + valueOffset];
-
-        if (ch.path == 1) {
-            Vec4 q = nlerpQuat(Vec4(v0[0], v0[1], v0[2], v0[3]),
-                               Vec4(v1[0], v1[1], v1[2], v1[3]), f);
-            n.r = q;
-        } else {
-            Vec3 val(lerpf(v0[0], v1[0], f), lerpf(v0[1], v1[1], f), lerpf(v0[2], v1[2], f));
-            if (ch.path == 0) n.t = val;
-            else n.s = val;
-        }
-    }
-
-    computeWorlds();
-    for (auto& skin : skins_)
-        for (size_t j = 0; j < skin.joints.size(); ++j)
-            skin.palette[j] = nodes_[skin.joints[j]].world * skin.inverseBind[j];
-}
-
 int Model::clipIndex(const std::string& name) const {
     for (size_t i = 0; i < clips_.size(); ++i)
         if (clips_[i].name == name) return (int)i;
@@ -641,96 +661,229 @@ float Model::clipDuration(int i) const {
     return (i >= 0 && (size_t)i < clips_.size()) ? clips_[i].duration : 0.0f;
 }
 
-namespace {
-// One node's local TRS — the unit of pose blending.
-struct PoseTRS {
-    Vec3 t, s;
-    Vec4 r;
-};
-} // namespace
-
-void Model::sampleClipTime(int clip, float t) {
-    sampleBlended(clip, t, clip, t, 0.0f);
+int Model::nodeIndex(const std::string& name) const {
+    for (size_t i = 0; i < nodes_.size(); ++i)
+        if (nodes_[i].name == name) return (int)i;
+    return -1;
 }
 
-void Model::sampleBlended(int clipA, float tA, int clipB, float tB, float w) {
-    if (clips_.empty()) return;
-    if (clipA < 0 || (size_t)clipA >= clips_.size()) clipA = 0;
-    if (clipB < 0 || (size_t)clipB >= clips_.size()) clipB = clipA;
-
-    // Start both poses from the nodes' current TRS so channels a clip doesn't
-    // animate stay put (and blend as no-ops).
-    std::vector<PoseTRS> poseA(nodes_.size()), poseB(nodes_.size());
-    for (size_t i = 0; i < nodes_.size(); ++i) {
-        poseA[i] = {nodes_[i].t, nodes_[i].s, nodes_[i].r};
-        poseB[i] = poseA[i];
+std::vector<float> Model::subtreeMask(const std::string& bone) const {
+    int root = nodeIndex(bone);
+    if (root < 0) return {};
+    std::vector<float> mask(nodes_.size(), 0.0f);
+    std::vector<int> stack{root};
+    while (!stack.empty()) {
+        int n = stack.back();
+        stack.pop_back();
+        mask[n] = 1.0f;
+        for (int c : nodes_[n].children) stack.push_back(c);
     }
+    return mask;
+}
 
-    auto evalInto = [&](int clipIdx, float t, std::vector<PoseTRS>& pose) {
-        const Clip& clip = clips_[clipIdx];
-        for (const Channel& ch : clip.channels) {
-            if (ch.node < 0 || (size_t)ch.node >= nodes_.size() || ch.times.empty()) continue;
-            nodes_[ch.node].hasMatrix = false;
-            size_t k = 0;
-            while (k + 1 < ch.times.size() && ch.times[k + 1] < t) ++k;
-            size_t k1 = k + 1 < ch.times.size() ? k + 1 : k;
-            float t0 = ch.times[k], t1 = ch.times[k1];
-            float f = (ch.interp == 1 || t1 <= t0) ? 0.0f
-                                                   : clampf((t - t0) / (t1 - t0), 0.0f, 1.0f);
-            int comp = ch.path == 1 ? 4 : 3;
-            int keyStride = ch.interp == 2 ? comp * 3 : comp;
-            int valueOffset = ch.interp == 2 ? comp : 0;
-            const float* v0 = &ch.values[k * keyStride + valueOffset];
-            const float* v1 = &ch.values[k1 * keyStride + valueOffset];
-            PoseTRS& p = pose[ch.node];
-            if (ch.path == 1) {
-                p.r = nlerpQuat(Vec4(v0[0], v0[1], v0[2], v0[3]),
-                                Vec4(v1[0], v1[1], v1[2], v1[3]), f);
-            } else {
-                Vec3 val(lerpf(v0[0], v1[0], f), lerpf(v0[1], v1[1], f), lerpf(v0[2], v1[2], f));
-                if (ch.path == 0) p.t = val;
-                else p.s = val;
+// Sample one channel at time t into out[ch.comp] floats. CUBICSPLINE stores
+// in-tangent/value/out-tangent triplets; we sample the values.
+void Model::sampleChannel(const Channel& ch, float t, float* out) {
+    size_t k = 0;
+    while (k + 1 < ch.times.size() && ch.times[k + 1] < t) ++k;
+    size_t k1 = k + 1 < ch.times.size() ? k + 1 : k;
+    float t0 = ch.times[k], t1 = ch.times[k1];
+    float f = (ch.interp == 1 || t1 <= t0) ? 0.0f : clampf((t - t0) / (t1 - t0), 0.0f, 1.0f);
+    size_t keyStride = ch.interp == 2 ? (size_t)ch.comp * 3 : (size_t)ch.comp;
+    size_t valueOffset = ch.interp == 2 ? (size_t)ch.comp : 0;
+    const float* v0 = &ch.values[k * keyStride + valueOffset];
+    const float* v1 = &ch.values[k1 * keyStride + valueOffset];
+    if (ch.path == 1) {
+        Vec4 q = nlerpQuat(Vec4(v0[0], v0[1], v0[2], v0[3]),
+                           Vec4(v1[0], v1[1], v1[2], v1[3]), f);
+        out[0] = q.x; out[1] = q.y; out[2] = q.z; out[3] = q.w;
+    } else {
+        for (int c = 0; c < ch.comp; ++c) out[c] = lerpf(v0[c], v1[c], f);
+    }
+}
+
+bool Model::clipTranslation(int clip, int node, float t, Vec3& out) const {
+    if (clip < 0 || (size_t)clip >= clips_.size() || node < 0) return false;
+    for (const Channel& ch : clips_[clip].channels) {
+        if (ch.node != node || ch.path != 0 || ch.times.empty()) continue;
+        float v[4];
+        sampleChannel(ch, t, v);
+        out = Vec3(v[0], v[1], v[2]);
+        return true;
+    }
+    return false;
+}
+
+int Model::guessRootBone() const {
+    int best = -1, bestDepth = 1 << 30;
+    for (const Clip& c : clips_) {
+        for (const Channel& ch : c.channels) {
+            if (ch.path != 0 || ch.node < 0 || (size_t)ch.node >= nodes_.size()) continue;
+            int depth = 0;
+            for (int n = ch.node; nodes_[n].parent >= 0; n = nodes_[n].parent) ++depth;
+            if (depth < bestDepth) {
+                bestDepth = depth;
+                best = ch.node;
             }
         }
-    };
-    evalInto(clipA, tA, poseA);
-    if (w > 0.0001f) evalInto(clipB, tB, poseB);
-
-    float bw = clampf(w, 0.0f, 1.0f);
-    for (size_t i = 0; i < nodes_.size(); ++i) {
-        Node& n = nodes_[i];
-        if (bw <= 0.0001f) {
-            n.t = poseA[i].t;
-            n.r = poseA[i].r;
-            n.s = poseA[i].s;
-        } else {
-            n.t = poseA[i].t + (poseB[i].t - poseA[i].t) * bw;
-            n.s = poseA[i].s + (poseB[i].s - poseA[i].s) * bw;
-            n.r = nlerpQuat(poseA[i].r, poseB[i].r, bw);
-        }
     }
-
-    computeWorlds();
-    for (auto& skin : skins_)
-        for (size_t j = 0; j < skin.joints.size(); ++j)
-            skin.palette[j] = nodes_[skin.joints[j]].world * skin.inverseBind[j];
+    return best;
 }
 
-void Model::emit(RenderScene& out, const Mat4& base) const {
+void Model::initPose(ModelPose& p) const {
+    p.destroyGpu();
+    p.locals.resize(nodes_.size());
+    p.useMatrix.resize(nodes_.size());
+    p.worlds.assign(nodes_.size(), Mat4::identity());
+    p.palettes.resize(skins_.size());
+    for (size_t s = 0; s < skins_.size(); ++s)
+        p.palettes[s].assign(skins_[s].joints.size(), Mat4::identity());
+    resetPoseLocals(p);
+    finalizePose(p);
+}
+
+void Model::resetPoseLocals(ModelPose& p) const {
+    if (p.locals.size() != nodes_.size()) return;
+    for (size_t i = 0; i < nodes_.size(); ++i) {
+        p.locals[i] = {nodes_[i].t, nodes_[i].r, nodes_[i].s};
+        p.useMatrix[i] = nodes_[i].hasMatrix ? 1 : 0;
+    }
+    // Explicit default weights on every morph node keep pose blending symmetric.
+    p.morphWeights = morphDefaults_;
+}
+
+void Model::evalClip(int clip, float t, ModelPose& p) const {
+    if (clip < 0 || (size_t)clip >= clips_.size() || p.locals.size() != nodes_.size()) return;
+    float out[4];
+    for (const Channel& ch : clips_[clip].channels) {
+        if (ch.node < 0 || (size_t)ch.node >= nodes_.size() || ch.times.empty()) continue;
+        if (ch.path == 3) {
+            std::vector<float>& w = p.morphWeights[ch.node];
+            w.resize((size_t)ch.comp);
+            sampleChannel(ch, t, w.data());
+            continue;
+        }
+        p.useMatrix[ch.node] = 0; // animated nodes always pose via TRS
+        sampleChannel(ch, t, out);
+        ModelPose::NodeTRS& l = p.locals[ch.node];
+        if (ch.path == 1) l.r = Vec4(out[0], out[1], out[2], out[3]);
+        else if (ch.path == 0) l.t = Vec3(out[0], out[1], out[2]);
+        else l.s = Vec3(out[0], out[1], out[2]);
+    }
+}
+
+void Model::blendPose(ModelPose& dst, const ModelPose& src, float w,
+                      const std::vector<float>* mask) {
+    if (dst.locals.size() != src.locals.size()) return;
+    for (size_t i = 0; i < dst.locals.size(); ++i) {
+        float wi = mask && i < mask->size() ? w * (*mask)[i] : w;
+        if (wi <= 0.0001f) continue;
+        ModelPose::NodeTRS& a = dst.locals[i];
+        const ModelPose::NodeTRS& b = src.locals[i];
+        a.t = a.t + (b.t - a.t) * wi;
+        a.s = a.s + (b.s - a.s) * wi;
+        a.r = nlerpQuat(a.r, b.r, wi);
+        if (!src.useMatrix[i]) dst.useMatrix[i] = 0;
+    }
+    for (const auto& [node, sw] : src.morphWeights) {
+        float wi = mask && node >= 0 && (size_t)node < mask->size() ? w * (*mask)[node] : w;
+        if (wi <= 0.0001f) continue;
+        std::vector<float>& dw = dst.morphWeights[node];
+        if (dw.size() < sw.size()) dw.resize(sw.size(), 0.0f);
+        for (size_t i = 0; i < sw.size(); ++i) dw[i] += (sw[i] - dw[i]) * wi;
+    }
+}
+
+void Model::finalizePose(ModelPose& p) const {
+    if (p.locals.size() != nodes_.size()) return;
+
+    // Worlds: depth-first from roots so parents are always resolved first.
+    std::vector<Mat4> parentWorld(nodes_.size(), Mat4::identity());
+    std::vector<int> stack(roots_.rbegin(), roots_.rend());
+    while (!stack.empty()) {
+        int ni = stack.back();
+        stack.pop_back();
+        const Node& n = nodes_[ni];
+        const ModelPose::NodeTRS& l = p.locals[ni];
+        Mat4 local = p.useMatrix[ni]
+                         ? n.matrix
+                         : translate(l.t) * quatToMat4(l.r.x, l.r.y, l.r.z, l.r.w) * scale(l.s);
+        p.worlds[ni] = parentWorld[ni] * local;
+        for (int c : n.children) {
+            parentWorld[c] = p.worlds[ni];
+            stack.push_back(c);
+        }
+    }
+    for (size_t s = 0; s < skins_.size(); ++s)
+        for (size_t j = 0; j < skins_[s].joints.size(); ++j)
+            p.palettes[s][j] = p.worlds[skins_[s].joints[j]] * skins_[s].inverseBind[j];
+
+    // Morph targets: CPU-blend base + weighted deltas into this instance's
+    // dynamic mesh whenever the weights changed.
+    for (const auto& [meshIdx, md] : morphs_) {
+        // Find the node driving this mesh (first draw that references it).
+        int node = -1;
+        for (const Draw& d : draws_)
+            if (d.mesh == meshIdx) { node = d.node; break; }
+        std::vector<float> weights(md.targets.size(), 0.0f);
+        auto wit = p.morphWeights.find(node);
+        if (wit != p.morphWeights.end())
+            for (size_t i = 0; i < weights.size() && i < wit->second.size(); ++i)
+                weights[i] = wit->second[i];
+
+        ModelPose::MorphMesh& mm = p.morphMeshes[meshIdx];
+        if (mm.created && mm.lastWeights == weights) continue;
+
+        MeshData data;
+        data.vertices = md.base.vertices;
+        bool touchNormals = false;
+        for (size_t ti = 0; ti < md.targets.size(); ++ti) {
+            float wt = weights[ti];
+            if (std::fabs(wt) < 1e-4f) continue;
+            const MorphData::Target& tg = md.targets[ti];
+            for (size_t v = 0; v < data.vertices.size() && v < tg.dpos.size(); ++v)
+                data.vertices[v].position = data.vertices[v].position + tg.dpos[v] * wt;
+            if (!tg.dnrm.empty()) {
+                touchNormals = true;
+                for (size_t v = 0; v < data.vertices.size() && v < tg.dnrm.size(); ++v)
+                    data.vertices[v].normal = data.vertices[v].normal + tg.dnrm[v] * wt;
+            }
+        }
+        if (touchNormals)
+            for (Vertex& v : data.vertices) v.normal = normalize(v.normal);
+
+        if (!mm.created) {
+            data.indices = md.base.indices;
+            mm.mesh.upload(data, true);
+            mm.created = true;
+        } else {
+            mm.mesh.updateVertices(data.vertices);
+        }
+        mm.lastWeights = std::move(weights);
+    }
+}
+
+void Model::emit(RenderScene& out, const Mat4& base, const ModelPose* pose) const {
+    bool usePose = pose && pose->locals.size() == nodes_.size();
     for (const Draw& d : draws_) {
         Renderable e;
         e.mesh = &meshes_[d.mesh];
-        e.boundsMin = e.mesh->boundsMin();
-        e.boundsMax = e.mesh->boundsMax();
+        if (usePose) {
+            auto mit = pose->morphMeshes.find(d.mesh);
+            if (mit != pose->morphMeshes.end() && mit->second.created)
+                e.mesh = &mit->second.mesh;
+        }
+        e.boundsMin = meshes_[d.mesh].boundsMin();
+        e.boundsMax = meshes_[d.mesh].boundsMax();
         if (d.material >= 0 && (size_t)d.material < materials_.size())
             e.material = materials_[d.material];
         if (d.skin >= 0 && (size_t)d.skin < skins_.size()) {
             // Skinned: the palette carries the pose in model space, so the
             // per-vertex skinning matrix already includes the node transform.
             e.transform = base;
-            e.jointMatrices = &skins_[d.skin].palette;
+            e.jointMatrices = usePose ? &pose->palettes[d.skin] : &skins_[d.skin].palette;
         } else {
-            e.transform = base * nodes_[d.node].world;
+            e.transform = base * (usePose ? pose->worlds[d.node] : nodes_[d.node].world);
         }
         out.entities.push_back(e);
     }
@@ -747,6 +900,8 @@ void Model::destroy() {
     skins_.clear();
     clips_.clear();
     draws_.clear();
+    morphs_.clear();
+    morphDefaults_.clear();
 }
 
 } // namespace ae

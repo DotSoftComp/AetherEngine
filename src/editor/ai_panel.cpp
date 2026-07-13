@@ -160,6 +160,23 @@ void AiPanel::drawAgents() {
             ImGui::PopTextWrapPos();
             ImGui::EndPopup();
         }
+        // Raw model output — the fastest way to see WHY a response failed to
+        // parse (fenced JSON, prose wrapper, truncation, refusal, ...).
+        if (!a.lastRaw.empty()) {
+            if (a.state == DevTeam::State::Error) ImGui::SameLine();
+            if (ImGui::SmallButton("raw")) ImGui::OpenPopup("raw");
+        }
+        if (ImGui::BeginPopup("raw")) {
+            ImGui::TextDisabled("%s — raw response (%d chars)", a.title.c_str(),
+                                (int)a.lastRaw.size());
+            if (ImGui::SmallButton("Copy")) ImGui::SetClipboardText(a.lastRaw.c_str());
+            ImGui::Separator();
+            ImGui::BeginChild("rawtext", ImVec2(560, 320), true,
+                              ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::TextUnformatted(a.lastRaw.c_str());
+            ImGui::EndChild();
+            ImGui::EndPopup();
+        }
         ImGui::EndChild();
     }
 }
@@ -180,9 +197,13 @@ void AiPanel::drawPlans() {
         ImGui::PushTextWrapPos();
         ImGui::TextDisabled("%s", p.summary.c_str());
         ImGui::PopTextWrapPos();
-        for (const DevTeam::PlanStep& s : p.steps)
-            ImGui::BulletText("[%s] %s - %s", s.agent.c_str(), s.title.c_str(),
-                              s.detail.c_str());
+        for (const DevTeam::PlanStep& s : p.steps) {
+            if (s.detail.empty())
+                ImGui::BulletText("[%s] %s", s.agent.c_str(), s.title.c_str());
+            else
+                ImGui::BulletText("[%s] %s - %s", s.agent.c_str(), s.title.c_str(),
+                                  s.detail.c_str());
+        }
         if (!p.artifacts.empty()) {
             std::string arts;
             for (const std::string& a : p.artifacts) arts += (arts.empty() ? "" : ", ") + a;
@@ -206,10 +227,29 @@ void AiPanel::drawProposals() {
 
     if (ImGui::Button("Apply all valid")) {
         for (size_t i = 0; i < proposals.size(); ++i) {
-            if (proposals[i].applied || !proposals[i].jsonValid) continue;
+            if (proposals[i].applied || !proposals[i].jsonValid || !proposals[i].issues.empty())
+                continue;
             std::string err;
             if (!team_.applyProposal(i, &err)) AE_ERROR("[AI] %s", err.c_str());
         }
+    }
+    // If validation found format problems, offer to send them straight back to
+    // the specialists (they revise in-session) — the self-correction loop.
+    std::string allIssues;
+    for (const auto& p : proposals)
+        if (!p.applied && !p.issues.empty())
+            allIssues += p.path + ": " + p.issues + "\n";
+    if (!allIssues.empty()) {
+        ImGui::SameLine();
+        ImGui::BeginDisabled(team_.busy());
+        if (ImGui::Button("Fix format issues")) {
+            team_.refine("These files don't match the engine's format. Fix exactly these "
+                         "problems, keeping the same JSON output shape:\n" + allIssues +
+                         "Match the example files you were given.");
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "(!) format issues found");
     }
 
     for (size_t i = 0; i < proposals.size(); ++i) {
@@ -232,6 +272,13 @@ void AiPanel::drawProposals() {
             if (!team_.applyProposal(i, &err)) AE_ERROR("[AI] %s", err.c_str());
         }
         ImGui::EndDisabled();
+        if (!p.issues.empty()) {
+            ImGui::Indent();
+            ImGui::PushTextWrapPos();
+            ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.3f, 1.0f), "format: %s", p.issues.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::Unindent();
+        }
         if (previewIndex_ == (int)i) {
             ImGui::BeginChild("preview", ImVec2(0, 220), true,
                               ImGuiWindowFlags_HorizontalScrollbar);

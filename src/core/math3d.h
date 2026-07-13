@@ -163,6 +163,20 @@ inline Vec4 quatMul(const Vec4& a, const Vec4& b) {
 
 inline Vec4 quatConj(const Vec4& q) { return Vec4(-q.x, -q.y, -q.z, q.w); }
 
+// Normalized quaternion lerp with hemisphere correction (nlerp ~ slerp for
+// the small angles found in animation blending).
+inline Vec4 nlerpQuat(const Vec4& a, const Vec4& b, float t) {
+    float d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    float sign = d < 0.0f ? -1.0f : 1.0f;
+    Vec4 r(a.x + (b.x * sign - a.x) * t,
+           a.y + (b.y * sign - a.y) * t,
+           a.z + (b.z * sign - a.z) * t,
+           a.w + (b.w * sign - a.w) * t);
+    float len = std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w);
+    if (len < 1e-8f) return Vec4(0, 0, 0, 1);
+    return Vec4(r.x / len, r.y / len, r.z / len, r.w / len);
+}
+
 inline Vec4 quatNormalize(const Vec4& q) {
     float l = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
     return l > 1e-8f ? Vec4(q.x / l, q.y / l, q.z / l, q.w / l) : quatIdentity();
@@ -215,6 +229,29 @@ inline Vec4 quatFromBasis(const Vec3& colX, const Vec3& colY, const Vec3& colZ) 
         q.y = (R[1][2] + R[2][1]) / s;
     }
     return quatNormalize(q);
+}
+
+// Shortest-arc rotation taking direction `from` to direction `to`.
+inline Vec4 quatFromTo(const Vec3& from, const Vec3& to) {
+    Vec3 f = normalize(from), t = normalize(to);
+    float d = dot(f, t);
+    if (d > 0.99999f) return quatIdentity();
+    if (d < -0.99999f) { // 180 degrees: any perpendicular axis works
+        Vec3 axis = cross(Vec3(1, 0, 0), f);
+        if (dot(axis, axis) < 1e-8f) axis = cross(Vec3(0, 1, 0), f);
+        return quatAxisAngle(axis, PI);
+    }
+    Vec3 axis = cross(f, t);
+    return quatNormalize(Vec4(axis.x, axis.y, axis.z, 1.0f + d));
+}
+
+// Rotation part of an affine matrix as a quaternion (columns normalized to
+// strip scale; assumes no shear).
+inline Vec4 quatFromMat4(const Mat4& m) {
+    Vec3 cx(m.m[0][0], m.m[0][1], m.m[0][2]);
+    Vec3 cy(m.m[1][0], m.m[1][1], m.m[1][2]);
+    Vec3 cz(m.m[2][0], m.m[2][1], m.m[2][2]);
+    return quatFromBasis(normalize(cx), normalize(cy), normalize(cz));
 }
 
 // Quaternion that orients local -Z (our "forward") to point along `forward`.

@@ -41,6 +41,12 @@ struct RenderSettings {
     // the dominant cost on GPUs with high per-draw overhead (iGPUs); dropping
     // to 2 nearly halves it. Fewer cascades = shorter shadow-cast distance.
     int shadowCascades = 4;
+    // Number of nearest spot lights that cast a real shadow map (0 disables).
+    // Each adds one depth re-raster of the scene, so it's capped and tier-gated.
+    int spotShadows = 4;
+    // Number of nearest point lights that cast an omnidirectional cube shadow
+    // (0 disables). Each is 6 face re-rasters, so it's small and tier-gated.
+    int pointShadows = 2;
 };
 
 // Per-frame counters, reset at the top of render().
@@ -75,6 +81,11 @@ class Renderer {
 public:
     static constexpr int kNumCascades = 4;
     static constexpr int kShadowRes = 2048;
+    static constexpr int kMaxSpotShadows = 4;
+    static constexpr int kSpotShadowRes = 1024;
+    static constexpr int kMaxPointShadows = 2;
+    static constexpr int kPointShadowRes = 512;
+    static constexpr int kMaxLights = 8;
     static constexpr int kEnvRes = 256;
     static constexpr int kIrradianceRes = 32;
     static constexpr int kPrefilterRes = 128;
@@ -100,6 +111,13 @@ private:
     void updateEnvironment(const Vec3& sunDir, float intensity);
 
     void shadowPass(const RenderScene& scene, const Camera& camera);
+    // Renders the scene's shadow casters with the given depth/distance program
+    // + its uLightMat (shared by the cascade, spot, and point passes).
+    void drawDepthCasters(const RenderScene& scene, const Camera& camera, Shader& prog);
+    // Per-frame depth maps for the nearest shadow-casting spot lights.
+    void spotShadowPass(const RenderScene& scene, const Camera& camera);
+    // Per-frame linear-distance cubes for the nearest shadow-casting point lights.
+    void pointShadowPass(const RenderScene& scene, const Camera& camera);
     void geometryPass(const RenderScene& scene, const Camera& camera);
     void ssaoPass(const Camera& camera);
     void compositePass(const RenderScene& scene, const Camera& camera);
@@ -137,7 +155,7 @@ private:
     int width_ = 0, height_ = 0;
 
     // Shaders
-    Shader shPBR_, shShadow_, shSkyCapture_, shBackground_;
+    Shader shPBR_, shShadow_, shPointDepth_, shSkyCapture_, shBackground_;
     Shader shIrradiance_, shPrefilter_, shBrdf_, shSkinLUT_;
     Shader shSSAO_, shSSAOBlur_, shComposite_;
     Shader shBloomDown_, shBloomUp_, shTonemap_, shFXAA_;
@@ -163,6 +181,20 @@ private:
     Mat4 cascadeMats_[kNumCascades];
     float cascadeSplits_[kNumCascades] = {};
     float cascadeTexelWorld_[kNumCascades] = {};
+
+    // Local spot-light shadows (perspective depth, one array layer per caster).
+    rhi::TextureHandle spotShadowTex_;
+    rhi::FramebufferHandle spotShadowFBO_;
+    Mat4 spotShadowMat_[kMaxSpotShadows];
+    int spotShadowCount_ = 0;
+    int lightSpotLayer_[kMaxLights] = {}; // per-light spot layer, -1 = none
+
+    // Local point-light shadows (linear-distance cubes, one per caster).
+    rhi::TextureHandle pointCube_[kMaxPointShadows];
+    rhi::TextureHandle pointDepthTex_; // shared scratch depth for the face renders
+    rhi::FramebufferHandle pointShadowFBO_;
+    int pointShadowCount_ = 0;
+    int lightPointCube_[kMaxLights] = {}; // per-light cube index, -1 = none
 
     // Geometry MRT
     rhi::FramebufferHandle gFBO_;
@@ -193,6 +225,7 @@ private:
     // Character shading + skinning
     rhi::TextureHandle skinLUT_;  // pre-integrated SSS (NdotL x curvature)
     rhi::BufferHandle jointUBO_;  // 128 mat4 palette, binding point 0
+    rhi::BufferHandle tonemapUBO_; // exposure/bloom/time, binding point 2 (UBO-uniform migration)
 
     rhi::FramebufferHandle outputFBO_; // final image (null = backbuffer)
 

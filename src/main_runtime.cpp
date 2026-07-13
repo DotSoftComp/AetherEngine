@@ -20,7 +20,12 @@
 // Runs the same World the editor authors, fullscreen with the in-game HUD
 // (dialogue, missions) and no editor UI. Built /SUBSYSTEM:WINDOWS (no console
 // flash); output attaches to the parent console when launched from one.
-#include "core/window.h"
+#include "core/window_sdl.h" // portable SDL3 host window
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX // keep min/max macros out of <atomic>/<limits>
+#include <windows.h> // host timing (QPC) + error dialogs; portable-ized in the Linux stage
+#endif
 #include "core/log.h"
 #include "core/capture.h"
 #include "core/json.h"
@@ -35,6 +40,9 @@
 #include "engine/game_module.h"
 #include "engine/engine_modules.h"
 #include "rhi/rhi.h"
+#include "rhi/vulkan_probe.h"
+#include "rhi/vulkan_context.h"
+#include "rhi/spirv_compile.h"
 #include "engine/plugin_manager.h"
 #include "ui/font.h"
 #include "ui/ui.h"
@@ -42,6 +50,7 @@
 #include "audio/audio.h"
 #include "narrative/dialogue_player.h"
 #include "narrative/mission_hud.h"
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -49,17 +58,21 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+// Ask laptops with switchable graphics to use the discrete GPU (Windows-only).
 extern "C" {
 __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
+#endif
 
 using namespace ae;
 
-// GUI-subsystem exe: reattach stdout/stderr to the launching console so dev
-// flows (--frames/--screenshot, log lines) still print. When the launcher
-// already redirected the handles (pipes/files), leave them alone.
+// Windows GUI-subsystem exes have no console; reattach stdout/stderr to the
+// launching console so dev flows (--frames/--screenshot, log lines) still
+// print. No-op on Linux/macOS/Android where stdout already works.
 static void attachParentConsole() {
+#ifdef _WIN32
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
     if (out != nullptr && out != INVALID_HANDLE_VALUE) return;
     if (AttachConsole(ATTACH_PARENT_PROCESS)) {
@@ -67,6 +80,20 @@ static void attachParentConsole() {
         freopen_s(&f, "CONOUT$", "w", stdout);
         freopen_s(&f, "CONOUT$", "w", stderr);
     }
+#endif
+}
+
+// Portable fatal-error notice: always to stderr; a native dialog on desktop.
+static void fatalDialog(const char* msg) {
+    std::fprintf(stderr, "%s\n", msg);
+#ifdef _WIN32
+    MessageBoxA(nullptr, msg, "Aether Engine", MB_OK | MB_ICONERROR);
+#endif
+}
+
+using Clock = std::chrono::steady_clock;
+static double msBetween(Clock::time_point a, Clock::time_point b) {
+    return std::chrono::duration<double, std::milli>(b - a).count();
 }
 
 // Optional quality overrides ("settings" in game.json); -1 = keep the
@@ -74,6 +101,8 @@ static void attachParentConsole() {
 struct QualityOverrides {
     float renderScale = -1.0f;
     int shadowCascades = -1;
+    int spotShadows = -1;
+    int pointShadows = -1;
     int vsync = -1;
     bool noInstancing = false;
 };
@@ -220,6 +249,8 @@ static bool loadPackagedGame(Project& project) {
     if (const JsonValue* s = doc.find("settings")) {
         g_quality.renderScale = (float)s->num("renderScale", -1.0);
         g_quality.shadowCascades = s->integer("shadowCascades", -1);
+        g_quality.spotShadows = s->integer("spotShadows", -1);
+        g_quality.pointShadows = s->integer("pointShadows", -1);
         if (s->find("vsync")) g_quality.vsync = s->flag("vsync", true) ? 1 : 0;
     }
     AE_LOG("[Game] packaged boot: %s (%s)", project.name.c_str(), project.root.c_str());
@@ -228,6 +259,41 @@ static bool loadPackagedGame(Project& project) {
 
 int main(int argc, char** argv) {
     attachParentConsole();
+
+    // --vulkan-probe: bring up Vulkan (instance/device/swapchain via SDL3),
+    // report the GPU, exit. Proves the Vulkan path on this hardware without
+    // the GL renderer — the groundwork the rhi_vulkan backend builds on.
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--vulkan-probe")) continue;
+        std::string dev, err;
+        bool ok = runVulkanProbe(&dev, &err);
+        if (ok) std::printf("VULKAN OK %s\n", dev.c_str());
+        else std::printf("VULKAN FAIL %s\n", err.c_str());
+        std::fflush(stdout);
+        return ok ? 0 : 1;
+    }
+    // --spirv-audit: compile every shader to SPIR-V (glslang) and report which
+    // are already Vulkan-ready vs. still need the UBO uniform rework.
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--spirv-audit")) continue;
+        return runSpirvAudit() ? 0 : 1;
+    }
+    // --vulkan-clear [out.bmp]: bring up the Vulkan context and present N cleared
+    // frames (foundation of rhi_vulkan); optional screenshot reads the swapchain
+    // back to prove present + readback work.
+    for (int i = 1; i < argc; ++i) {
+        bool clear = !std::strcmp(argv[i], "--vulkan-clear");
+        bool tri = !std::strcmp(argv[i], "--vulkan-triangle");
+        if (!clear && !tri) continue;
+        const char* out = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[i + 1] : nullptr;
+        std::string dev, err;
+        bool ok = runVulkanClear(out ? 120 : 240, out, tri, &dev, &err);
+        std::printf("VULKAN-%s %s %s\n", tri ? "TRIANGLE" : "CLEAR", ok ? "OK" : "FAIL",
+                    ok ? dev.c_str() : err.c_str());
+        std::fflush(stdout);
+        return ok ? 0 : 1;
+    }
+
     int captureFrames = -1;
     const char* screenshotPath = nullptr;
     const char* comparePath = nullptr;
@@ -249,6 +315,10 @@ int main(int argc, char** argv) {
         if (!std::strcmp(argv[i], "--noinstancing")) g_quality.noInstancing = true;
         if (!std::strcmp(argv[i], "--cascades") && i + 1 < argc)
             g_quality.shadowCascades = std::atoi(argv[++i]);
+        if (!std::strcmp(argv[i], "--spotshadows") && i + 1 < argc)
+            g_quality.spotShadows = std::atoi(argv[++i]);
+        if (!std::strcmp(argv[i], "--pointshadows") && i + 1 < argc)
+            g_quality.pointShadows = std::atoi(argv[++i]);
         if (!std::strcmp(argv[i], "--rscale") && i + 1 < argc)
             g_quality.renderScale = (float)std::atof(argv[++i]);
     }
@@ -264,10 +334,8 @@ int main(int argc, char** argv) {
     if (!booted) {
         std::fprintf(stderr, "Usage: AetherRuntime --project <dir or .aeproj>\n");
         if (verifyMode) return verifyReport(false, false, 0, mapPath ? mapPath : "");
-        MessageBoxA(nullptr,
-                    "No game to run.\n\nEither place this exe in a packaged game folder "
-                    "(game.json) or pass --project <dir or .aeproj>.",
-                    "Aether Engine", MB_OK | MB_ICONERROR);
+        fatalDialog("No game to run.\n\nEither place this exe in a packaged game folder "
+                    "(game.json) or pass --project <dir or .aeproj>.");
         return 1;
     }
 
@@ -299,6 +367,10 @@ int main(int argc, char** argv) {
     applyGpuAutoTier(renderer.settings);
     if (g_quality.shadowCascades >= 1 && g_quality.shadowCascades <= Renderer::kNumCascades)
         renderer.settings.shadowCascades = g_quality.shadowCascades;
+    if (g_quality.spotShadows >= 0 && g_quality.spotShadows <= Renderer::kMaxSpotShadows)
+        renderer.settings.spotShadows = g_quality.spotShadows;
+    if (g_quality.pointShadows >= 0 && g_quality.pointShadows <= Renderer::kMaxPointShadows)
+        renderer.settings.pointShadows = g_quality.pointShadows;
     if (g_quality.renderScale > 0.0f)
         renderer.settings.renderScale = g_quality.renderScale < 0.25f  ? 0.25f
                                         : g_quality.renderScale > 1.0f ? 1.0f
@@ -372,8 +444,7 @@ int main(int argc, char** argv) {
     if (startScene.empty() || !loadWorld(world, assets, assets.resolvePath(startScene))) {
         AE_ERROR("[Game] cannot load startup scene '%s'", startScene.c_str());
         if (verifyMode) return verifyReport(false, false, 0, startScene);
-        MessageBoxA(nullptr, "The project's startup scene could not be loaded.",
-                    "Aether Engine", MB_OK | MB_ICONERROR);
+        fatalDialog("The project's startup scene could not be loaded.");
         return 1;
     }
     world.missions.load(joinPath(project.root, "assets\\missions\\missions.json"));
@@ -394,10 +465,7 @@ int main(int argc, char** argv) {
     UI ui;
     if (!ui.init(&font)) { std::fprintf(stderr, "UI init failed\n"); return 1; }
 
-    LARGE_INTEGER freq, prev, start;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&prev);
-    start = prev;
+    Clock::time_point prev = Clock::now(), start = prev;
     int frame = 0;
     double passSums[FrameStats::PassCount] = {};
     double updateSum = 0.0, swapSum = 0.0;
@@ -405,20 +473,19 @@ int main(int argc, char** argv) {
     bool compareOk = true; // stays true when no --compare
     RenderScene renderScene;
     while (window.poll()) {
-        LARGE_INTEGER now; QueryPerformanceCounter(&now);
-        float dt = (float)((double)(now.QuadPart - prev.QuadPart) / freq.QuadPart);
-        float time = (float)((double)(now.QuadPart - start.QuadPart) / freq.QuadPart);
+        Clock::time_point now = Clock::now();
+        float dt = std::chrono::duration<float>(now - prev).count();
+        float time = std::chrono::duration<float>(now - start).count();
         prev = now;
         if (dt > 0.1f) dt = 0.1f;
         // Deterministic stepping for captures/verification.
         if (screenshotPath || verifyMode) { dt = 1.0f / 60.0f; time = frame / 60.0f; }
 
         const Input& in = window.input();
-        if (in.keys[VK_ESCAPE]) break;
+        if (in.keys[0x1B]) break; // Esc (Input.keys is VK-indexed; 0x1B = VK_ESCAPE)
         if (window.wasResized()) ensureRenderTarget(window.width(), window.height());
 
-        LARGE_INTEGER u0, u1;
-        QueryPerformanceCounter(&u0);
+        Clock::time_point u0 = Clock::now();
         world.update(dt, time, in, true);
         processSaveRequests(world, assets);
         world.buildRenderScene(renderScene);
@@ -426,8 +493,7 @@ int main(int argc, char** argv) {
         const Camera& cam = world.camera();
         audioEngine().setListener(cam.position, cam.forwardDir, cam.upDir);
         audioEngine().update(dt);
-        QueryPerformanceCounter(&u1);
-        updateSum += (double)(u1.QuadPart - u0.QuadPart) * 1000.0 / freq.QuadPart;
+        updateSum += msBetween(u0, Clock::now());
 
         renderer.render(renderScene, world.camera(), time);
         if (gpuProfile)
@@ -456,20 +522,18 @@ int main(int argc, char** argv) {
         ui.end();
 
         if (screenshotPath && ++frame >= captureFrames) {
-            captureScreenshot(window, screenshotPath);
+            captureScreenshot(window.width(), window.height(), screenshotPath);
             if (comparePath)
                 compareOk = runCompare(screenshotPath, assets.resolvePath(comparePath),
                                        psnrBudget);
             break;
         }
-        LARGE_INTEGER s0, s1;
-        QueryPerformanceCounter(&s0);
+        Clock::time_point s0 = Clock::now();
         window.swapBuffers();
-        QueryPerformanceCounter(&s1);
-        swapSum += (double)(s1.QuadPart - s0.QuadPart) * 1000.0 / freq.QuadPart;
+        swapSum += msBetween(s0, Clock::now());
 
         if (benchmark && ++frame >= captureFrames) {
-            double secs = (double)(now.QuadPart - start.QuadPart) / freq.QuadPart;
+            double secs = std::chrono::duration<double>(now - start).count();
             AE_LOG("[Benchmark] %dx%d: %d frames in %.2fs = %.1f fps (%.2f ms/frame)",
                    window.width(), window.height(), frame, secs, frame / secs,
                    secs / frame * 1000.0);

@@ -9,9 +9,12 @@ out vec4 fragColor;
 layout(binding = 0) uniform sampler2D texHDR;
 layout(binding = 1) uniform sampler2D texBloom;
 
-uniform float uExposure;
-uniform float uBloomStrength;
-uniform float uTime;
+// UBO binding 2 (samplers occupy 0,1). Vulkan-ready: no default-block uniforms.
+layout(std140, binding = 2) uniform Tonemap {
+    float uExposure;
+    float uBloomStrength;
+    float uTime;
+};
 
 // Narkowicz ACES filmic approximation.
 vec3 acesFilm(vec3 x) {

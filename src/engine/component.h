@@ -22,6 +22,10 @@ public:
     virtual void onStart() {}
     // Called every frame while the owning entity is active.
     virtual void onUpdate(float dt) { (void)dt; }
+    // Called after every onUpdate and the physics step, before rendering —
+    // for pose post-processing (IK) and anything that must see final
+    // transforms regardless of component order.
+    virtual void onLateUpdate(float dt) { (void)dt; }
     // Called during render-packet assembly; append draws/lights here.
     virtual void contribute(RenderScene& out) { (void)out; }
 

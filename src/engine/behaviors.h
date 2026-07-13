@@ -4,7 +4,7 @@
 #include "entity.h"
 #include "world.h"
 #include "components.h"
-#include "../core/window.h"
+#include "../core/input.h"
 
 namespace ae {
 

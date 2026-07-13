@@ -71,6 +71,14 @@ typedef uint64_t GLuint64;
 #define GL_FRAMEBUFFER_COMPLETE           0x8CD5
 #define GL_FRAMEBUFFER_SRGB               0x8DB9
 #define GL_UNIFORM_BUFFER                 0x8A11
+#define GL_UNIFORM_TYPE                   0x8A37
+#define GL_UNIFORM_OFFSET                 0x8A3B
+#define GL_UNIFORM_ARRAY_STRIDE           0x8A3C
+#define GL_UNIFORM_MATRIX_STRIDE          0x8A3D
+#define GL_UNIFORM_BLOCK_DATA_SIZE        0x8A40
+#define GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS  0x8A42
+#define GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES 0x8A43
+#define GL_INVALID_INDEX                  0xFFFFFFFFu
 #define GL_DEBUG_OUTPUT                   0x92E0
 #define GL_DEBUG_OUTPUT_SYNCHRONOUS       0x8242
 #define GL_DEBUG_SEVERITY_HIGH            0x9146
@@ -127,6 +135,11 @@ typedef void (APIENTRY* GLDEBUGPROC)(GLenum source, GLenum type, GLuint id, GLen
     X(void, glVertexArrayAttribIFormat, (GLuint vaobj, GLuint attribindex, GLint size, GLenum type, GLuint relativeoffset)) \
     X(void, glNamedBufferSubData, (GLuint buffer, GLintptr offset, GLsizeiptr size, const void* data)) \
     X(void, glBindBufferBase, (GLenum target, GLuint index, GLuint buffer)) \
+    X(GLuint, glGetUniformBlockIndex, (GLuint program, const GLchar* uniformBlockName)) \
+    X(void, glGetActiveUniformBlockiv, (GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint* params)) \
+    X(void, glGetActiveUniformsiv, (GLuint program, GLsizei uniformCount, const GLuint* uniformIndices, GLenum pname, GLint* params)) \
+    X(void, glGetActiveUniformName, (GLuint program, GLuint uniformIndex, GLsizei bufSize, GLsizei* length, GLchar* uniformName)) \
+    X(void, glUniformBlockBinding, (GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding)) \
     X(void, glVertexArrayAttribBinding, (GLuint vaobj, GLuint attribindex, GLuint bindingindex)) \
     X(void, glCreateTextures, (GLenum target, GLsizei n, GLuint* textures)) \
     X(void, glTextureStorage2D, (GLuint texture, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height)) \
@@ -160,5 +173,10 @@ extern AE_API PFNWGLCREATECONTEXTATTRIBSARB wglCreateContextAttribsARB;
 
 namespace ae {
 // Must be called with a current GL context. Returns false if any core function is missing.
-bool loadGLFunctions();
+bool loadGLFunctions(); // WGL loader (Win32 editor window)
+
+// Backend-neutral loader: resolves every GL entry point through the supplied
+// getProcAddress (e.g. SDL_GL_GetProcAddress). The portable path.
+typedef void* (*GLLoaderProc)(const char*);
+bool loadGLFunctionsWith(GLLoaderProc proc);
 }

@@ -6,6 +6,7 @@
 #include "../ui/ui_document_component.h"
 #include "../core/log.h"
 #include <cctype>
+#include <cfloat>
 #include <cstdio>
 #include <cstring>
 
@@ -77,6 +78,11 @@ void UIDesignerPanel::addChild(const char* type) {
         w.bg = Vec4(0.08f, 0.08f, 0.12f, 0.85f);
     }
     if (std::strcmp(type, "Panel") == 0) w.bg = Vec4(0.05f, 0.05f, 0.08f, 0.6f);
+    if (std::strcmp(type, "Image") == 0) {
+        w.size = Vec2(96, 96);
+        w.bg = Vec4(0, 0, 0, 0);
+        w.image = "assets/ui/sprite.png"; // placeholder path the author retargets
+    }
     w.offset = Vec2(40, 40);
     parent->children.push_back(std::move(w));
     selectedId_ = parent->children.back().id;
@@ -150,6 +156,7 @@ void UIDesignerPanel::drawToolbar(World* world, AssetLibrary* assets) {
         if (ImGui::MenuItem("Label")) addChild("Label");
         if (ImGui::MenuItem("Button")) addChild("Button");
         if (ImGui::MenuItem("ProgressBar")) addChild("ProgressBar");
+        if (ImGui::MenuItem("Image")) addChild("Image");
         ImGui::EndPopup();
     }
     ImGui::SameLine();
@@ -225,9 +232,23 @@ void UIDesignerPanel::drawCanvas() {
                 dl->AddRect(a, b, IM_COL32(255, 255, 255, 70));
             }
             if (w.type == "Label" || w.type == "Button") {
-                ImVec2 ts = ImGui::CalcTextSize(w.text.c_str());
-                dl->AddText(ImVec2((a.x + b.x - ts.x) * 0.5f, (a.y + b.y - ts.y) * 0.5f),
+                // Preview honors per-widget fontScale so authors size text visually.
+                float fsize = ImGui::GetFontSize() * (w.fontScale > 0 ? w.fontScale : 1.0f);
+                ImFont* font = ImGui::GetFont();
+                ImVec2 ts = font->CalcTextSizeA(fsize, FLT_MAX, 0.0f, w.text.c_str());
+                dl->AddText(font, fsize,
+                            ImVec2((a.x + b.x - ts.x) * 0.5f, (a.y + b.y - ts.y) * 0.5f),
                             col(Vec4(w.color.x, w.color.y, w.color.z, 1)), w.text.c_str());
+            }
+            if (w.type == "Image") {
+                dl->AddRectFilled(a, b, IM_COL32(40, 42, 54, 170));
+                dl->AddRect(a, b, IM_COL32(150, 120, 220, 210));
+                const char* nm = w.image.c_str();
+                if (const char* slash = std::strrchr(nm, '/')) nm = slash + 1;
+                ImVec2 ts = ImGui::CalcTextSize(nm);
+                if (ts.x < (b.x - a.x))
+                    dl->AddText(ImVec2((a.x + b.x - ts.x) * 0.5f, (a.y + b.y - ts.y) * 0.5f),
+                                IM_COL32(200, 190, 230, 220), nm);
             }
             if (w.type == "Button") dl->AddRect(a, b, IM_COL32(255, 255, 255, 90));
             if (selectedId_ == w.id)
@@ -310,9 +331,18 @@ void UIDesignerPanel::drawProps() {
         char buf[260];
         std::snprintf(buf, sizeof(buf), "%s", w->text.c_str());
         if (ImGui::InputText("Text", buf, sizeof(buf))) { w->text = buf; dirty_ = true; }
+        if (ImGui::DragFloat("Font scale", &w->fontScale, 0.02f, 0.2f, 8.0f, "%.2fx"))
+            dirty_ = true;
         if (w->type == "Label") ImGui::TextDisabled("{flag:name} substitutes a story flag");
         if (w->type == "Button") ImGui::TextDisabled("Click fires OnUIButton (id = \"%s\")",
                                                      w->id.c_str());
+    }
+    if (w->type == "Image") {
+        char ib[260];
+        std::snprintf(ib, sizeof(ib), "%s", w->image.c_str());
+        if (ImGui::InputText("Sprite", ib, sizeof(ib))) { w->image = ib; dirty_ = true; }
+        ImGui::TextDisabled("project-relative path, e.g. assets/ui/logo.png");
+        ImGui::TextDisabled("Color tints the sprite (alpha fades it)");
     }
     if (ImGui::ColorEdit4("Color", &w->color.x, ImGuiColorEditFlags_Float)) dirty_ = true;
     if (ImGui::ColorEdit4("Background", &w->bg.x, ImGuiColorEditFlags_Float)) dirty_ = true;

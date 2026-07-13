@@ -144,6 +144,14 @@ void World::update(float dt, float time, const Input& input, bool tickBehaviors)
         recomputeTransforms();
         if (engineModules().enabled("physics")) physics.step(*this, dt);
 
+        // Late tick: pose post-processing (IK) and anything that must see the
+        // physics-resolved transforms, whatever the component order.
+        for (const auto& e : entities_) {
+            if (!e->active_ || e->pendingDestroy_) continue;
+            for (const auto& c : e->components_)
+                if (c->started_) c->onLateUpdate(dt);
+        }
+
         // UI button events posted during last frame's HUD draw were visible to
         // this update's scripts (OnUIButton); consume them now.
         uiEvents_.clear();

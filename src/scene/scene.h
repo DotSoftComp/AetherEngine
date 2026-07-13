@@ -93,6 +93,8 @@ struct ParticlePoint {
     Vec3 pos;
     float size = 0.2f;
     Vec4 color{1, 1, 1, 1}; // HDR RGB + alpha (bloom picks up >1 values)
+    float rot = 0.0f;       // billboard roll (radians, in the camera plane)
+    float frame = 0.0f;     // flipbook cell (used when the batch has a grid)
 };
 
 // A particle emitter's output for this frame. Additive batches glow
@@ -100,6 +102,9 @@ struct ParticlePoint {
 struct ParticleBatch {
     std::vector<ParticlePoint> points;
     bool additive = true;
+    unsigned texture = 0;        // sprite texture (0 = procedural soft disc)
+    int flipCols = 1, flipRows = 1; // flipbook grid inside `texture`
+    float softFade = 0.0f;       // depth-fade distance in meters (0 = off)
 };
 
 struct RenderScene {

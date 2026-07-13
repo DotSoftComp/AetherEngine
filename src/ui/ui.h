@@ -8,7 +8,7 @@
 #include "../rhi/rhi.h"
 #include "../gl/gl_api.h"
 #include "../core/math3d.h"
-#include "../core/window.h"
+#include "../core/input.h"
 #include "../render/shader.h"
 #include "font.h"
 #include <vector>
@@ -49,8 +49,9 @@ public:
     void rectFill(const Rect& r, uint32_t color);
     void rectLine(const Rect& r, uint32_t color, float t = 1.0f);
     void gradientV(const Rect& r, uint32_t top, uint32_t bottom);
-    void text(float x, float y, const char* s, uint32_t color, float spacing = 0.0f);
-    void textCentered(const Rect& r, const char* s, uint32_t color);
+    void text(float x, float y, const char* s, uint32_t color, float spacing = 0.0f,
+              float scale = 1.0f);
+    void textCentered(const Rect& r, const char* s, uint32_t color, float scale = 1.0f);
     float measureText(const char* s, float spacing = 0.0f) const;
     void image(const Rect& r, unsigned tex, bool flipY); // rhi texture id
     void pushClip(const Rect& r);

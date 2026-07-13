@@ -8,7 +8,7 @@
 #include "../engine/entity.h"
 #include "../engine/world.h"
 #include "../engine/reflect.h"
-#include "../core/window.h" // Input (CharacterController)
+#include "../core/input.h" // CharacterController reads Input
 
 namespace ae {
 

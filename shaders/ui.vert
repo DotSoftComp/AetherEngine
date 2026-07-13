@@ -2,7 +2,9 @@
 layout(location = 0) in vec2 aPos;   // pixels, origin top-left
 layout(location = 1) in vec2 aUV;
 layout(location = 2) in vec4 aColor;  // normalized RGBA
-uniform vec2 uScreen;
+layout(std140, binding = 15) uniform U {
+    vec2 uScreen;
+};
 out vec2 vUV;
 out vec4 vColor;
 void main() {

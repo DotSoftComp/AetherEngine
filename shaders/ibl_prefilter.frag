@@ -6,9 +6,11 @@
 in vec2 vUV;
 out vec4 fragColor;
 
-uniform int uFace;
-uniform float uRoughness;
-uniform float uEnvResolution;
+layout(std140, binding = 15) uniform U {
+    int uFace;
+    float uRoughness;
+    float uEnvResolution;
+};
 layout(binding = 0) uniform samplerCube texEnv;
 
 void main() {

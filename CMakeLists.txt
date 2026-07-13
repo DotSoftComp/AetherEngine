@@ -52,13 +52,52 @@ FetchContent_Declare(recastnavigation
     GIT_SHALLOW ON)
 FetchContent_MakeAvailable(recastnavigation)
 
+# ---- SDL3 (portable window/input/audio + the Android bootstrap) -------------
+# The runtime host window is SDL3 so games run on Windows/Linux/macOS/Android
+# from one path; the editor keeps its bespoke Win32 window (desktop-only).
+# Static so the runtime ships as a single exe; minimal build (no tests).
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+FetchContent_Declare(SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-3.2.0
+    GIT_SHALLOW ON)
+FetchContent_MakeAvailable(SDL3)
+
+# ---- Vulkan (the unifying backend: Windows/Linux/Android/Switch; macOS via
+# MoltenVK). Headers only + the volk meta-loader (dynamic entry-point loading
+# through SDL's Vulkan loader), so no LunarG SDK / vulkan-1 import lib needed. -
+FetchContent_Declare(VulkanHeaders
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+    GIT_TAG v1.3.283
+    GIT_SHALLOW ON)
+FetchContent_MakeAvailable(VulkanHeaders)
+
+add_library(volk STATIC third_party/volk/volk.c)
+target_link_libraries(volk PUBLIC Vulkan::Headers)
+target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES)
+target_include_directories(volk PUBLIC ${CMAKE_SOURCE_DIR}/third_party/volk)
+
+# ---- glslang: GLSL -> SPIR-V (no system Vulkan SDK on the dev box). Minimal
+# build: no optimizer (drops the SPIRV-Tools dep), no binaries, no tests. -----
+set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+set(GLSLANG_TESTS OFF CACHE BOOL "" FORCE)
+set(GLSLANG_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(glslang
+    GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
+    GIT_TAG vulkan-sdk-1.3.283.0
+    GIT_SHALLOW ON)
+FetchContent_MakeAvailable(glslang)
+
 # ---- engine core (AetherCore.dll) -----------------------------------------
 add_library(ae_core SHARED
     src/core/math3d.cpp
     src/core/json.cpp
     src/core/log.cpp
     src/core/guid.cpp
-    src/core/window.cpp
     src/core/capture.cpp
     src/core/paths.cpp
     src/core/process.cpp
@@ -83,6 +122,7 @@ add_library(ae_core SHARED
     src/engine/input_actions.cpp
     src/engine/particles.cpp
     src/engine/anim_graph.cpp
+    src/engine/anim_ik.cpp
     src/engine/data_table.cpp
     src/engine/doc_gen.cpp
     src/engine/agent_bridge_help.cpp
@@ -140,6 +180,7 @@ target_link_libraries(imgui_lib PUBLIC opengl32 user32 gdi32)
 # ---- editor ----------------------------------------------------------------
 add_executable(AetherEditor
     src/main_editor.cpp
+    src/core/window.cpp          # Win32 window (editor's custom chrome)
     src/editor/imgui_layer.cpp
     src/editor/editor.cpp
     src/editor/inspector_visitor.cpp
@@ -163,8 +204,14 @@ target_link_libraries(AetherEditor PRIVATE ae_core imgui_lib comdlg32 ws2_32)
 # parent console for dev/CI output.
 add_executable(AetherRuntime WIN32
     src/main_runtime.cpp
+    src/core/window_sdl.cpp      # SDL3 window (portable: Win/Linux/macOS/Android)
+    src/rhi/vulkan_probe.cpp     # Vulkan bring-up (foundation for rhi_vulkan)
+    src/rhi/vulkan_context.cpp   # Vulkan device/swapchain/frame loop (rhi_vulkan core)
+    src/rhi/spirv_compile.cpp    # GLSL -> SPIR-V (glslang) for the Vulkan backend
 )
-target_link_libraries(AetherRuntime PRIVATE ae_core)
+target_link_libraries(AetherRuntime PRIVATE ae_core SDL3::SDL3-static volk
+                      glslang SPIRV glslang-default-resource-limits)
+target_compile_definitions(AetherRuntime PRIVATE VK_NO_PROTOTYPES)
 if(MSVC)
     target_link_options(AetherRuntime PRIVATE /ENTRY:mainCRTStartup)
 endif()
@@ -176,6 +223,7 @@ add_executable(AetherHub WIN32
     src/hub/hub_main.cpp
     src/hub/launcher_state.cpp
     src/hub/engine_update.cpp
+    src/core/window.cpp          # Win32 window (hub shares the editor's chrome)
     src/editor/imgui_layer.cpp
 )
 target_link_libraries(AetherHub PRIVATE ae_core imgui_lib comdlg32 shell32)

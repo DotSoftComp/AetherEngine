@@ -5,9 +5,11 @@
 in vec2 vUV;
 out vec4 fragColor;
 
-uniform int uFace;
-uniform vec3 uSunDir;
-uniform float uSunIntensity;
+layout(std140, binding = 15) uniform U {
+    int uFace;
+    vec3 uSunDir;
+    float uSunIntensity;
+};
 
 void main() {
     vec3 dir = cubeFaceDir(uFace, vUV * 2.0 - 1.0);

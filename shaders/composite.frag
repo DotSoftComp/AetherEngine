@@ -10,12 +10,14 @@ layout(binding = 1) uniform sampler2D texAmbient;
 layout(binding = 2) uniform sampler2D texAO;
 layout(binding = 3) uniform sampler2D texDepth;
 
-uniform mat4 uInvViewProj;
-uniform vec3 uCamPos;
-uniform vec3 uSunDir;
-uniform vec3 uFogColor;       // horizon radiance sampled from the sky
-uniform float uFogDensity;
-uniform float uFogHeightFalloff;
+layout(std140, binding = 15) uniform U {
+    mat4 uInvViewProj;
+    vec3 uCamPos;
+    vec3 uSunDir;
+    vec3 uFogColor;
+    float uFogDensity;
+    float uFogHeightFalloff;
+};
 
 void main() {
     vec3 direct = texture(texDirect, vUV).rgb;

@@ -6,9 +6,11 @@ in vec2 vUV;
 out vec4 fragColor;
 
 layout(binding = 0) uniform sampler2D texSrc;
-uniform int uFirstPass;      // 1 -> apply Karis average + soft threshold
-uniform float uThreshold;
-uniform float uKnee;
+layout(std140, binding = 15) uniform U {
+    int uFirstPass;
+    float uThreshold;
+    float uKnee;
+};
 
 vec3 sampleSrc(vec2 uv) { return texture(texSrc, uv).rgb; }
 

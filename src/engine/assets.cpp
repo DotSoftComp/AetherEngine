@@ -1,12 +1,38 @@
 #include "assets.h"
 #include "../core/log.h"
+#include "../render/image.h"
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 
 namespace ae {
+
+unsigned AssetLibrary::uiImage(const std::string& path) {
+    if (path.empty()) return 0;
+    auto it = uiImages_.find(path);
+    if (it != uiImages_.end()) return it->second.id();
+
+    Texture2D& tex = uiImages_[path]; // insert (id() == 0 until loaded)
+    std::ifstream f(resolvePath(path), std::ios::binary | std::ios::ate);
+    if (!f) {
+        AE_WARN("[UI] image not found: %s", path.c_str());
+        return 0;
+    }
+    size_t size = (size_t)f.tellg();
+    f.seekg(0);
+    std::vector<uint8_t> bytes(size);
+    f.read((char*)bytes.data(), (std::streamsize)size);
+    ImageData img;
+    if (!decodeImage(bytes.data(), bytes.size(), img)) {
+        AE_WARN("[UI] image decode failed: %s", path.c_str());
+        return 0;
+    }
+    tex.create(img.width, img.height, img.rgba.data(), /*srgb=*/true);
+    return tex.id();
+}
 
 static std::string normalizeSlashes(std::string s) {
     for (char& c : s)

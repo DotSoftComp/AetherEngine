@@ -35,6 +35,17 @@ public:
     Vec4 colorEnd{0.8f, 0.1f, 0.05f, 0.0f};
     bool additive = true;
 
+    // Appearance: sprite texture (blank = procedural soft disc), optional
+    // flipbook grid inside it (fps 0 = play the grid once over the lifetime),
+    // per-particle roll, and soft depth fade where particles cross geometry.
+    std::string texturePath;    // project-relative image (png/jpg/bmp)
+    int flipbookCols = 1, flipbookRows = 1;
+    float flipbookFps = 0.0f;
+    float spinDeg = 0.0f;       // roll speed, degrees/second (± jitter)
+    float spinJitter = 0.5f;    // 0..1 fraction of spinDeg
+    bool randomRotation = false; // random initial roll at spawn
+    float softFade = 0.0f;      // fade distance in meters (0 = off)
+
     const char* typeName() const override { return "Particles"; }
     void reflect(PropertyVisitor& v) override {
         v.visit("rate", rate, {PropKind::Default, "Rate (per sec)", 0.5f, 0.0f, 5000.0f});
@@ -52,8 +63,18 @@ public:
         v.visit("colorStart", colorStart, {PropKind::Color, "Color start (HDR)"});
         v.visit("colorEnd", colorEnd, {PropKind::Color, "Color end (HDR)"});
         v.visit("additive", additive, {PropKind::Default, "Additive"});
+        v.visit("texture", texturePath, {PropKind::Default, "Texture (blank = disc)"});
+        v.visit("flipbookCols", flipbookCols, {PropKind::Default, "Flipbook cols", 1, 1, 64});
+        v.visit("flipbookRows", flipbookRows, {PropKind::Default, "Flipbook rows", 1, 1, 64});
+        v.visit("flipbookFps", flipbookFps,
+                {PropKind::Default, "Flipbook fps (0 = lifetime)", 0.5f, 0.0f, 240.0f});
+        v.visit("spin", spinDeg, {PropKind::Angle, "Spin (deg/s)", 1.0f});
+        v.visit("spinJitter", spinJitter, {PropKind::SliderNorm, "Spin jitter"});
+        v.visit("randomRotation", randomRotation, {PropKind::Default, "Random rotation"});
+        v.visit("softFade", softFade, {PropKind::Default, "Soft fade (m)", 0.02f, 0.0f, 10.0f});
     }
 
+    void onDeserialized(AssetLibrary& assets) override;
     void onUpdate(float dt) override;
     void contribute(RenderScene& out) override;
 
@@ -64,8 +85,10 @@ private:
         float life = 0.0f;
         float maxLife = 1.0f;
         float speedScale = 1.0f;
+        float rot = 0.0f, spin = 0.0f; // billboard roll + roll velocity (rad)
     };
     std::vector<Particle> pool_;
+    unsigned texId_ = 0; // resolved from texturePath (0 = procedural disc)
     float spawnAcc_ = 0.0f;
     unsigned rng_ = 22699u;
     float frand(); // 0..1

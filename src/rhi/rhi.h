@@ -95,6 +95,9 @@ struct GeometryHandle {
 
 GeometryHandle createGeometry(const GeometryDesc& desc);
 void destroyGeometry(GeometryHandle& g); // nulls the handle
+// Re-uploads the vertex buffer in place (byte count must not exceed the
+// original allocation). For geometry created with dynamic = true.
+void updateGeometryVertices(GeometryHandle g, const void* data, size_t bytes);
 // Indexed triangle draw; instances > 1 issues an instanced draw.
 void draw(GeometryHandle g, unsigned indexCount, int instances = 1);
 

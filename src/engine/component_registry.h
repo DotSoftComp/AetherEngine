@@ -65,7 +65,8 @@ void registerBuiltinComponents();
 
 // Bumped whenever Component / PropertyVisitor / Entity layout changes in a way
 // that breaks compiled game modules; the loader refuses mismatched DLLs.
-#define AE_ABI_VERSION 1
+// v2: Component::onLateUpdate virtual + per-instance ModelPose (C1 animation).
+#define AE_ABI_VERSION 2
 
 // moduleId used for a project's GameModule.dll registrations.
 constexpr int kGameModuleId = 1;

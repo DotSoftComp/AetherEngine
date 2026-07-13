@@ -44,6 +44,11 @@ public:
     std::vector<std::string> meshNames() const;
     std::vector<std::string> textureSetNames() const;
 
+    // UI image (sprite) loaded from a project-relative PNG/JPG path, cached by
+    // path; returns the rhi texture id (0 when missing). For UIDocument Image
+    // widgets — sRGB, no mips.
+    unsigned uiImage(const std::string& path);
+
     std::string resolvePath(const std::string& maybeRelative) const;
     std::string toProjectRelative(const std::string& absolute) const;
 
@@ -54,6 +59,7 @@ private:
     std::map<std::string, std::unique_ptr<Model>> models_; // key: normalized relative path
     std::map<std::string, std::unique_ptr<MaterialGraphAsset>> matGraphs_;
     std::map<std::string, std::unique_ptr<DataTable>> dataTables_;
+    std::map<std::string, Texture2D> uiImages_; // key: normalized relative path
 };
 
 } // namespace ae

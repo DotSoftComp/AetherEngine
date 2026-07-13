@@ -15,8 +15,9 @@ namespace ae {
 
 bool AnimGraphPanel::createStarterGraph(const std::string& path) {
     AnimGraph g;
-    g.start = "idle";
     g.parameters.push_back({"Speed", 0.0f});
+    AnimLayer base;
+    base.start = "idle";
     AnimState idle;
     idle.id = "idle";
     idle.clip = "Idle";
@@ -27,10 +28,11 @@ bool AnimGraphPanel::createStarterGraph(const std::string& path) {
     walk.clip = "Walk";
     walk.x = 380;
     walk.y = 120;
-    g.states.push_back(idle);
-    g.states.push_back(walk);
-    g.transitions.push_back({"idle", "walk", "Speed", ">", 0.2f, 0.25f});
-    g.transitions.push_back({"walk", "idle", "Speed", "<=", 0.2f, 0.25f});
+    base.states.push_back(idle);
+    base.states.push_back(walk);
+    base.transitions.push_back({"idle", "walk", "Speed", ">", 0.2f, 0.25f});
+    base.transitions.push_back({"walk", "idle", "Speed", "<=", 0.2f, 0.25f});
+    g.layers.push_back(std::move(base));
     return saveAnimGraph(g, path);
 }
 
@@ -41,6 +43,7 @@ void AnimGraphPanel::open(const std::string& path, bool focus) {
     path_ = path;
     loaded_ = true;
     dirty_ = false;
+    layer_ = 0;
     selState_ = -1;
     selTransition_ = -1;
     if (focus) {
@@ -89,6 +92,7 @@ void AnimGraphPanel::draw(World* world, AssetLibrary* assets) {
         ImGui::End();
         return;
     }
+    if (layer_ >= (int)graph_.layers.size()) layer_ = 0;
     drawToolbar(world, assets);
     ImGui::Separator();
 
@@ -119,19 +123,58 @@ void AnimGraphPanel::drawToolbar(World* world, AssetLibrary* assets) {
         for (int i = 1;; ++i) {
             char id[16];
             std::snprintf(id, sizeof(id), "state%d", i);
-            if (graph_.stateIndex(id) < 0) { s.id = id; break; }
+            if (L().stateIndex(id) < 0) { s.id = id; break; }
         }
         s.clip = "Idle";
         s.x = (220.0f - pan_.x) / zoom_;
         s.y = (140.0f - pan_.y) / zoom_;
-        graph_.states.push_back(std::move(s));
-        selState_ = (int)graph_.states.size() - 1;
+        L().states.push_back(std::move(s));
+        selState_ = (int)L().states.size() - 1;
         selTransition_ = -1;
         dirty_ = true;
     }
+
+    // Layer bar: each layer is its own state machine, overlaid in order.
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::BeginCombo("##layer", graph_.layers[layer_].name.c_str())) {
+        for (int i = 0; i < (int)graph_.layers.size(); ++i) {
+            char label[96];
+            std::snprintf(label, sizeof(label), "%d: %s", i, graph_.layers[i].name.c_str());
+            if (ImGui::Selectable(label, layer_ == i)) {
+                layer_ = i;
+                selState_ = -1;
+                selTransition_ = -1;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+ Layer")) {
+        AnimLayer nl;
+        nl.name = "Layer" + std::to_string(graph_.layers.size());
+        graph_.layers.push_back(std::move(nl));
+        layer_ = (int)graph_.layers.size() - 1;
+        selState_ = -1;
+        selTransition_ = -1;
+        dirty_ = true;
+    }
+    if (layer_ > 0) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("x Layer")) {
+            graph_.layers.erase(graph_.layers.begin() + layer_);
+            layer_ = 0;
+            selState_ = -1;
+            selTransition_ = -1;
+            dirty_ = true;
+        }
+    }
+
     ImGui::SameLine();
     ImGui::TextDisabled("| %s  ·  %d states  ·  %d transitions", path_.c_str(),
-                        (int)graph_.states.size(), (int)graph_.transitions.size());
+                        (int)L().states.size(), (int)L().transitions.size());
 }
 
 void AnimGraphPanel::drawCanvas(World* world, AssetLibrary* assets) {
@@ -182,17 +225,17 @@ void AnimGraphPanel::drawCanvas(World* world, AssetLibrary* assets) {
         return ImVec2(p.x + nodeW * 0.5f, p.y + nodeH * 0.5f);
     };
 
-    // Live state highlight during Play.
+    // Live state highlight during Play (for the layer being edited).
     std::string liveState;
-    if (AnimatorComponent* a = liveAnimator(world, assets)) liveState = a->currentState();
+    if (AnimatorComponent* a = liveAnimator(world, assets)) liveState = a->currentState(layer_);
 
     // ---- transitions as arrows (offset when a reverse pair exists) ----
-    for (int i = 0; i < (int)graph_.transitions.size(); ++i) {
-        const AnimTransition& t = graph_.transitions[i];
-        int fi = graph_.stateIndex(t.from), ti = graph_.stateIndex(t.to);
+    for (int i = 0; i < (int)L().transitions.size(); ++i) {
+        const AnimTransition& t = L().transitions[i];
+        int fi = L().stateIndex(t.from), ti = L().stateIndex(t.to);
         if (fi < 0 || ti < 0) continue;
-        ImVec2 a = centerOf(graph_.states[fi]);
-        ImVec2 b = centerOf(graph_.states[ti]);
+        ImVec2 a = centerOf(L().states[fi]);
+        ImVec2 b = centerOf(L().states[ti]);
         ImVec2 d(b.x - a.x, b.y - a.y);
         float len = std::sqrt(d.x * d.x + d.y * d.y);
         if (len < 1.0f) continue;
@@ -232,24 +275,34 @@ void AnimGraphPanel::drawCanvas(World* world, AssetLibrary* assets) {
     }
 
     // ---- states ----
-    for (int i = 0; i < (int)graph_.states.size(); ++i) {
-        AnimState& s = graph_.states[i];
+    for (int i = 0; i < (int)L().states.size(); ++i) {
+        AnimState& s = L().states[i];
         ImVec2 p = tl(s);
         ImVec2 br(p.x + nodeW, p.y + nodeH);
-        bool isStart = graph_.start == s.id;
+        bool isStart = L().start == s.id;
         bool isLive = !liveState.empty() && liveState == s.id;
 
         dl->AddRectFilled(p, br, IM_COL32(34, 34, 43, 245), 8.0f * zoom_);
-        dl->AddRectFilled(p, ImVec2(br.x, p.y + 20 * zoom_),
-                          isStart ? IM_COL32(80, 150, 60, 255) : IM_COL32(100, 90, 190, 255),
-                          8.0f * zoom_, ImDrawFlags_RoundCornersTop);
+        // Header: green = start, purple = clip state, teal = blend space.
+        ImU32 head_col = isStart ? IM_COL32(80, 150, 60, 255)
+                                 : s.type != 0 ? IM_COL32(50, 130, 140, 255)
+                                               : IM_COL32(100, 90, 190, 255);
+        dl->AddRectFilled(p, ImVec2(br.x, p.y + 20 * zoom_), head_col, 8.0f * zoom_,
+                          ImDrawFlags_RoundCornersTop);
         char head[64];
         std::snprintf(head, sizeof(head), "%s%s", s.id.c_str(), isStart ? "  [start]" : "");
         dl->AddText(font, fs * 0.9f, ImVec2(p.x + 8 * zoom_, p.y + 2.5f * zoom_),
                     IM_COL32(245, 246, 250, 255), head);
         char body[80];
-        std::snprintf(body, sizeof(body), "%s  x%.2g%s", s.clip.c_str(), s.speed,
-                      s.loop ? "" : "  (once)");
+        if (s.type == 0)
+            std::snprintf(body, sizeof(body), "%s  x%.2g%s", s.clip.c_str(), s.speed,
+                          s.loop ? "" : "  (once)");
+        else if (s.type == 1)
+            std::snprintf(body, sizeof(body), "blend1d(%s)  %d motions", s.paramX.c_str(),
+                          (int)s.motions.size());
+        else
+            std::snprintf(body, sizeof(body), "blend2d(%s,%s)  %d motions", s.paramX.c_str(),
+                          s.paramY.c_str(), (int)s.motions.size());
         dl->AddText(font, fs * 0.85f, ImVec2(p.x + 8 * zoom_, p.y + 26 * zoom_),
                     IM_COL32(195, 198, 208, 255), body);
 
@@ -274,17 +327,17 @@ void AnimGraphPanel::drawCanvas(World* world, AssetLibrary* assets) {
         if (ImGui::BeginPopupContextItem("state_ctx")) {
             selState_ = i;
             selTransition_ = -1;
-            if (ImGui::MenuItem("Set as start")) { graph_.start = s.id; dirty_ = true; }
+            if (ImGui::MenuItem("Set as start")) { L().start = s.id; dirty_ = true; }
             if (ImGui::BeginMenu("Add transition to")) {
-                for (const auto& other : graph_.states) {
+                for (const auto& other : L().states) {
                     if (other.id == s.id) continue;
                     if (ImGui::MenuItem(other.id.c_str())) {
-                        graph_.transitions.push_back(
+                        L().transitions.push_back(
                             {s.id, other.id, graph_.parameters.empty()
                                                  ? "Speed"
                                                  : graph_.parameters[0].name,
                              ">", 0.0f, 0.25f});
-                        selTransition_ = (int)graph_.transitions.size() - 1;
+                        selTransition_ = (int)L().transitions.size() - 1;
                         selState_ = -1;
                         dirty_ = true;
                     }
@@ -295,10 +348,10 @@ void AnimGraphPanel::drawCanvas(World* world, AssetLibrary* assets) {
                 std::string dead = s.id;
                 ImGui::EndPopup();
                 ImGui::PopID();
-                for (int t = (int)graph_.transitions.size() - 1; t >= 0; --t)
-                    if (graph_.transitions[t].from == dead || graph_.transitions[t].to == dead)
-                        graph_.transitions.erase(graph_.transitions.begin() + t);
-                graph_.states.erase(graph_.states.begin() + i);
+                for (int t = (int)L().transitions.size() - 1; t >= 0; --t)
+                    if (L().transitions[t].from == dead || L().transitions[t].to == dead)
+                        L().transitions.erase(L().transitions.begin() + t);
+                L().states.erase(L().states.begin() + i);
                 selState_ = -1;
                 selTransition_ = -1;
                 dirty_ = true;
@@ -342,53 +395,120 @@ void AnimGraphPanel::drawSidebar(World* world, AssetLibrary* assets) {
         dirty_ = true;
     }
     if (live) {
-        ImGui::TextDisabled("Playing: state '%s'", live->currentState().c_str());
+        ImGui::TextDisabled("Playing: state '%s'", live->currentState(layer_).c_str());
     }
 
-    ImGui::Spacing();
-    if (selState_ >= 0 && selState_ < (int)graph_.states.size()) {
-        AnimState& s = graph_.states[selState_];
-        ImGui::SeparatorText("State");
-        char idb[64];
-        std::snprintf(idb, sizeof(idb), "%s", s.id.c_str());
-        if (ImGui::InputText("Id", idb, sizeof(idb), ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::string ni = idb;
-            if (!ni.empty() && graph_.stateIndex(ni) < 0) {
-                for (auto& t : graph_.transitions) {
-                    if (t.from == s.id) t.from = ni;
-                    if (t.to == s.id) t.to = ni;
-                }
-                if (graph_.start == s.id) graph_.start = ni;
-                s.id = ni;
-                dirty_ = true;
-            }
+    // Overlay layers carry their own blend controls.
+    if (layer_ > 0) {
+        AnimLayer& lay = L();
+        ImGui::SeparatorText("Layer");
+        char nb[64];
+        std::snprintf(nb, sizeof(nb), "%s", lay.name.c_str());
+        if (ImGui::InputText("Name", nb, sizeof(nb))) { lay.name = nb; dirty_ = true; }
+        if (ImGui::SliderFloat("Weight", &lay.weight, 0.0f, 1.0f)) dirty_ = true;
+        char wp[64];
+        std::snprintf(wp, sizeof(wp), "%s", lay.weightParam.c_str());
+        if (ImGui::InputText("Weight param", wp, sizeof(wp))) { lay.weightParam = wp; dirty_ = true; }
+        char mb[64];
+        std::snprintf(mb, sizeof(mb), "%s", lay.maskBone.c_str());
+        if (ImGui::InputText("Mask bone", mb, sizeof(mb))) { lay.maskBone = mb; dirty_ = true; }
+        ImGui::TextDisabled("Mask bone: layer only affects that bone's subtree.");
+    }
+
+    // Clip combos are populated from a live model when available.
+    Model* model = nullptr;
+    if (world)
+        for (const auto& e : world->entities()) {
+            if (auto* mc = e->getComponent<ModelComponent>())
+                if (mc->model && mc->model->clipCount() > 0) { model = mc->model; break; }
         }
-        // Clip combo populated from the live Animator's model when available.
-        Model* model = nullptr;
-        if (world)
-            for (const auto& e : world->entities()) {
-                if (auto* mc = e->getComponent<ModelComponent>())
-                    if (mc->model && mc->model->clipCount() > 0) { model = mc->model; break; }
-            }
+    auto clipEdit = [&](const char* label, std::string& clip) {
         if (model) {
-            if (ImGui::BeginCombo("Clip", s.clip.c_str())) {
+            if (ImGui::BeginCombo(label, clip.c_str())) {
                 for (int c = 0; c < model->clipCount(); ++c)
-                    if (ImGui::Selectable(model->clipName(c), s.clip == model->clipName(c))) {
-                        s.clip = model->clipName(c);
+                    if (ImGui::Selectable(model->clipName(c), clip == model->clipName(c))) {
+                        clip = model->clipName(c);
                         dirty_ = true;
                     }
                 ImGui::EndCombo();
             }
         } else {
             char cb[64];
-            std::snprintf(cb, sizeof(cb), "%s", s.clip.c_str());
-            if (ImGui::InputText("Clip", cb, sizeof(cb))) { s.clip = cb; dirty_ = true; }
+            std::snprintf(cb, sizeof(cb), "%s", clip.c_str());
+            if (ImGui::InputText(label, cb, sizeof(cb))) { clip = cb; dirty_ = true; }
+        }
+    };
+
+    ImGui::Spacing();
+    if (selState_ >= 0 && selState_ < (int)L().states.size()) {
+        AnimState& s = L().states[selState_];
+        ImGui::SeparatorText("State");
+        char idb[64];
+        std::snprintf(idb, sizeof(idb), "%s", s.id.c_str());
+        if (ImGui::InputText("Id", idb, sizeof(idb), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            std::string ni = idb;
+            if (!ni.empty() && L().stateIndex(ni) < 0) {
+                for (auto& t : L().transitions) {
+                    if (t.from == s.id) t.from = ni;
+                    if (t.to == s.id) t.to = ni;
+                }
+                if (L().start == s.id) L().start = ni;
+                s.id = ni;
+                dirty_ = true;
+            }
+        }
+        const char* types[] = {"Clip", "Blend 1D", "Blend 2D"};
+        int type = s.type;
+        if (ImGui::Combo("Type", &type, types, 3)) {
+            s.type = type;
+            dirty_ = true;
+        }
+        if (s.type == 0) {
+            clipEdit("Clip", s.clip);
+        } else {
+            char px[64];
+            std::snprintf(px, sizeof(px), "%s", s.paramX.c_str());
+            if (ImGui::InputText("Param X", px, sizeof(px))) { s.paramX = px; dirty_ = true; }
+            if (s.type == 2) {
+                char py[64];
+                std::snprintf(py, sizeof(py), "%s", s.paramY.c_str());
+                if (ImGui::InputText("Param Y", py, sizeof(py))) { s.paramY = py; dirty_ = true; }
+            }
+            ImGui::SeparatorText("Motions");
+            int killM = -1;
+            for (int m = 0; m < (int)s.motions.size(); ++m) {
+                BlendMotion& bm = s.motions[m];
+                ImGui::PushID(m + 100);
+                clipEdit("Clip", bm.clip);
+                ImGui::SetNextItemWidth(70);
+                if (ImGui::DragFloat("X", &bm.x, 0.05f)) dirty_ = true;
+                if (s.type == 2) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(70);
+                    if (ImGui::DragFloat("Y", &bm.y, 0.05f)) dirty_ = true;
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(60);
+                if (ImGui::DragFloat("Spd", &bm.speed, 0.01f, 0.01f, 10.0f)) dirty_ = true;
+                ImGui::SameLine();
+                if (ImGui::SmallButton("x")) killM = m;
+                ImGui::Separator();
+                ImGui::PopID();
+            }
+            if (killM >= 0) {
+                s.motions.erase(s.motions.begin() + killM);
+                dirty_ = true;
+            }
+            if (ImGui::SmallButton("+ Motion")) {
+                s.motions.push_back({});
+                dirty_ = true;
+            }
         }
         if (ImGui::DragFloat("Speed", &s.speed, 0.01f, 0.0f, 10.0f)) dirty_ = true;
         bool loop = s.loop;
         if (ImGui::Checkbox("Loop", &loop)) { s.loop = loop; dirty_ = true; }
-    } else if (selTransition_ >= 0 && selTransition_ < (int)graph_.transitions.size()) {
-        AnimTransition& t = graph_.transitions[selTransition_];
+    } else if (selTransition_ >= 0 && selTransition_ < (int)L().transitions.size()) {
+        AnimTransition& t = L().transitions[selTransition_];
         ImGui::SeparatorText("Transition");
         ImGui::Text("%s -> %s", t.from.c_str(), t.to.c_str());
         if (ImGui::BeginCombo("Parameter", t.param.c_str())) {
@@ -407,7 +527,7 @@ void AnimGraphPanel::drawSidebar(World* world, AssetLibrary* assets) {
         if (ImGui::DragFloat("Value", &t.value, 0.05f)) dirty_ = true;
         if (ImGui::DragFloat("Blend (s)", &t.blend, 0.01f, 0.0f, 5.0f)) dirty_ = true;
         if (ImGui::Button("Delete transition")) {
-            graph_.transitions.erase(graph_.transitions.begin() + selTransition_);
+            L().transitions.erase(L().transitions.begin() + selTransition_);
             selTransition_ = -1;
             dirty_ = true;
         }
@@ -415,8 +535,11 @@ void AnimGraphPanel::drawSidebar(World* world, AssetLibrary* assets) {
         ImGui::SeparatorText("Help");
         ImGui::TextWrapped("Drag states to arrange. Right-click a state to set the start "
                            "state, add a transition, or delete it. Click an arrow's midpoint "
-                           "dot to edit its condition. Gameplay drives Parameters via "
-                           "Animator::setParam or the SetAnimParam script node.");
+                           "dot to edit its condition. A state can be a single clip or a "
+                           "1D/2D blend space (motions weighted live by parameters). Add "
+                           "layers to overlay animations — set a mask bone to restrict a "
+                           "layer to a subtree (e.g. upper body). Gameplay drives Parameters "
+                           "via Animator::setParam or the SetAnimParam script node.");
     }
 }
 

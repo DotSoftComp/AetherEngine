@@ -10,7 +10,7 @@
 #include "../scene/scene.h"
 #include "../physics/physics.h"
 #include "../ai/nav_mesh.h"
-#include "../core/window.h" // Input
+#include "../core/input.h"
 #include <memory>
 #include <string>
 #include <vector>

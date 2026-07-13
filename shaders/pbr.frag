@@ -17,15 +17,7 @@ layout(location = 1) out vec4 outAmbient;
 layout(location = 2) out vec4 outNormal;
 
 // ---- material ----
-uniform vec4  uBaseColor;
-uniform float uMetallic;
-uniform float uRoughness;
-uniform vec3  uEmissive;
-uniform int   uTexFlags;      // 1 albedo, 2 normal, 4 metal-rough, 8 emissive, 16 occlusion
-uniform float uUVScale;
-uniform float uNormalScale;
-uniform float uOcclusionStrength;
-uniform float uAlphaCutoff;   // < 0 disables alpha masking
+#include "pbr_uniforms.glsl"
 layout(binding = 0) uniform sampler2D texAlbedo;
 layout(binding = 1) uniform sampler2D texNormal;
 layout(binding = 2) uniform sampler2D texMR;        // glTF: G = roughness, B = metallic
@@ -33,24 +25,14 @@ layout(binding = 7) uniform sampler2D texOcclusion; // R = AO (may alias texMR)
 layout(binding = 8) uniform sampler2D texEmissive;
 
 // ---- character skin (pre-integrated subsurface scattering) ----
-uniform float uSubsurface;     // 0 = standard lambert diffuse
-uniform float uSSSCurvature;   // 0 = derive from screen-space derivatives
-uniform float uTranslucency;
-uniform vec3  uSSSTint;
 layout(binding = 9) uniform sampler2D texSkinLUT;
 
 // ---- environment ----
 layout(binding = 3) uniform samplerCube texIrradiance;
 layout(binding = 4) uniform samplerCube texPrefilter;
 layout(binding = 5) uniform sampler2D  texBrdfLUT;
-uniform float uPrefilterMips;
 
 // ---- lights ----
-uniform vec3 uCamPos;
-uniform mat4 uViewForNormal;
-uniform vec3 uSunDir;         // pointing towards the sun
-uniform vec3 uSunRadiance;
-uniform float uTime; // scene time in seconds (Time/Panner material-graph nodes)
 
 // Material-graph variants: generated sampler declarations land here.
 //__MG_DECLS__
@@ -59,24 +41,58 @@ uniform float uTime; // scene time in seconds (Time/Panner material-graph nodes)
 // 0 = deferred MRT geometry pass. 1 = forward: combine direct+ambient here,
 // apply the same analytic height fog as composite.frag (which already ran),
 // and output premixed color with alpha for SRC_ALPHA blending.
-uniform int   uForwardPass;
-uniform vec3  uFogColor;
-uniform float uFogDensity;
-uniform float uFogHeightFalloff;
 
-const int MAX_LIGHTS = 8;
-uniform int  uNumLights;
-uniform vec3 uLightPos[MAX_LIGHTS];
-uniform vec3 uLightColor[MAX_LIGHTS];
-uniform vec3 uLightDir[MAX_LIGHTS];       // beam axis (spot/directional)
-uniform vec4 uLightParams[MAX_LIGHTS];    // x=type(0 pt,1 spot,2 dir) y=range z=cosInner w=cosOuter
 
 // ---- cascaded shadow maps ----
-const int NUM_CASCADES = 4;
 layout(binding = 6) uniform sampler2DArrayShadow texShadow;
-uniform mat4  uLightMat[NUM_CASCADES];
-uniform vec4  uCascadeSplits;      // view-space far boundary of each cascade
-uniform vec4  uCascadeTexelWorld;  // world-space size of one shadow texel per cascade
+
+// ---- local (spot) shadow maps: one perspective depth layer per caster ----
+layout(binding = 10) uniform sampler2DArrayShadow texSpotShadow;
+
+// ---- point (omni) shadow maps: linear-distance cubes, one per caster ----
+layout(binding = 11) uniform samplerCube texPointShadow0;
+layout(binding = 12) uniform samplerCube texPointShadow1;
+
+float pointShadowFactor(int cube, vec3 lightToFrag, float dist01) {
+    // Small PCF: center + a few offsets around the sample direction so cube
+    // shadows aren't a hard aliased edge. dist01 is our distance normalized by
+    // range; the cube stores the nearest caster's normalized distance.
+    const vec3 offs[5] = vec3[5](vec3(0, 0, 0), vec3(0.03, 0.03, 0.0),
+                                 vec3(-0.03, 0.03, 0.0), vec3(0.03, -0.03, 0.0),
+                                 vec3(-0.03, -0.03, 0.03));
+    float bias = 0.015 + 0.02 * dist01;
+    float lit = 0.0;
+    for (int i = 0; i < 5; ++i) {
+        vec3 dir = lightToFrag + offs[i];
+        float stored = (cube == 0) ? texture(texPointShadow0, dir).r
+                                   : texture(texPointShadow1, dir).r;
+        lit += (dist01 - bias <= stored) ? 1.0 : 0.0;
+    }
+    return lit / 5.0;
+}
+
+float spotShadowFactor(int layer, vec3 worldPos, vec3 N, float NdotL) {
+    // Normal-offset bias (spots are close-range, so a small world offset works).
+    vec4 lp = uSpotShadowMat[layer] * vec4(worldPos + N * 0.03, 1.0);
+    if (lp.w <= 0.0) return 1.0;               // behind the light
+    vec3 coord = lp.xyz / lp.w * 0.5 + 0.5;
+    if (coord.z >= 1.0) return 1.0;            // past the far plane -> lit
+    // Outside the light's frustum: lit (the cone attenuation already handles it).
+    if (any(lessThan(coord.xy, vec2(0.0))) || any(greaterThan(coord.xy, vec2(1.0))))
+        return 1.0;
+
+    float bias = 0.0009 + 0.0025 * (1.0 - NdotL);
+    float ref = coord.z - bias;
+    // 3x3 PCF (manual offsets: no textureOffset for sampler2DArrayShadow on some
+    // drivers — same reason as the cascade path).
+    vec2 texelUV = 1.0 / vec2(textureSize(texSpotShadow, 0).xy);
+    float sum = 0.0;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x)
+            sum += texture(texSpotShadow, vec4(coord.xy + vec2(x, y) * texelUV,
+                                               float(layer), ref));
+    return sum / 9.0;
+}
 
 float sampleCascade(int cascade, vec3 worldPos, vec3 N, float NdotL) {
     // Normal-offset bias: push the receiver towards the light along the
@@ -197,12 +213,17 @@ void main() {
     vec3 geoN = normalize(fs.normal);
     if (!gl_FrontFacing) geoN = -geoN; // double-sided materials
     vec3 N = geoN;
+#ifdef MATERIAL_GRAPH
+    // Generated TBN application when the graph's Output.Normal is connected.
+//__MG_NORMAL__
+#else
     if ((uTexFlags & 2) != 0) {
         vec3 tn = texture(texNormal, uv).xyz * 2.0 - 1.0;
         tn.xy *= uNormalScale;
         mat3 TBN = mat3(normalize(fs.tangent), normalize(fs.bitangent), geoN);
         N = normalize(TBN * tn);
     }
+#endif
 
     vec3 V = normalize(uCamPos - fs.worldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
@@ -245,6 +266,18 @@ void main() {
                 // Spot: soft cone from the beam axis (inner..outer cosines).
                 float spotCos = dot(-L, normalize(uLightDir[i]));
                 atten *= smoothstep(uLightParams[i].w, uLightParams[i].z, spotCos);
+                // Cast shadow if this spot has an allocated shadow layer.
+                int layer = int(uLightExtra[i].x);
+                if (layer >= 0 && atten > 0.0)
+                    atten *= spotShadowFactor(layer, fs.worldPos, geoN, max(dot(N, L), 0.0));
+            } else if (type == 0) {
+                // Point: omnidirectional cube shadow if one is allocated.
+                int cube = int(uLightExtra[i].y);
+                if (cube >= 0 && atten > 0.0) {
+                    vec3 lightToFrag = fs.worldPos - uLightPos[i];
+                    float dist01 = sqrt(dist2) / max(range, 1e-4);
+                    atten *= pointShadowFactor(cube, lightToFrag, dist01);
+                }
             }
             radiance *= atten;
         }

@@ -2,7 +2,6 @@
 // Windows GDI (no external font libraries; uses the OS the way WIC decodes PNGs).
 #pragma once
 #include "../rhi/rhi.h"
-#include "../gl/gl_api.h"
 
 namespace ae {
 

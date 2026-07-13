@@ -16,6 +16,7 @@
 #include <commdlg.h>
 #include <shellapi.h>
 #include <algorithm>
+#include <cfloat>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
@@ -71,6 +72,28 @@ struct HubUI {
     std::vector<std::string> templates; // template dir names
     int templateIndex = 0;
     std::string lastError;
+    // Deferred open + "switch base engine on open?" modal state.
+    std::string pendingOpen;     // project path clicked this frame (resolved after the table)
+    std::string switchProjPath;  // project the modal is about
+    std::string switchToVersion; // the compatible newer engine the modal offers
+
+    KnownProject* findProject(const std::string& path) {
+        for (KnownProject& p : state.projects)
+            if (p.path == path) return &p;
+        return nullptr;
+    }
+
+    // Re-pins a project to a different installed engine version. Edits only the
+    // manifest's engineVersion (all other fields preserved) + updates
+    // launcher.json. The editor refreshes generated docs on next open.
+    void repinProject(KnownProject& p, const std::string& version) {
+        std::string err;
+        if (!setProjectEngineVersion(p.path, version, &err)) { lastError = err; return; }
+        p.engineVersion = version;
+        state.registerProject(p.path, p.name, version);
+        state.save();
+        lastError.clear();
+    }
 
     // Newest engine version on this machine — what a release must beat.
     std::string newestInstalledVersion() const {
@@ -102,6 +125,46 @@ struct HubUI {
         state.touchProject(p.path);
         state.save();
         lastError.clear();
+    }
+
+    // "A newer compatible engine is installed — switch this project to it?"
+    // Shown on Open (opened by drawProjectsTab). Project files are untouched;
+    // only the base engine pin and the editor-regenerated reference docs change.
+    void drawSwitchModal() {
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (!ImGui::BeginPopupModal("Switch base engine?", nullptr,
+                                    ImGuiWindowFlags_AlwaysAutoResize))
+            return;
+        KnownProject* p = findProject(switchProjPath);
+        if (!p) {
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::Text("A newer compatible engine is installed.");
+        ImGui::Spacing();
+        ImGui::Text("\"%s\" is pinned to Aether %s.", p->name.c_str(), p->engineVersion.c_str());
+        ImGui::Text("Switch it to %s and open?", switchToVersion.c_str());
+        ImGui::TextDisabled("Same major version — a compatible update. Your project files are\n"
+                            "untouched; only the base engine changes and the editor refreshes\n"
+                            "the generated reference docs to match.");
+        ImGui::Spacing();
+        char openPinned[80];
+        std::snprintf(openPinned, sizeof(openPinned), "Open on %s", p->engineVersion.c_str());
+        if (ImGui::Button("Switch & open")) {
+            repinProject(*p, switchToVersion);
+            openProject(*p);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(openPinned)) {
+            openProject(*p);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
 
     void drawProjectsTab(Window& window) {
@@ -170,9 +233,9 @@ struct HubUI {
                               ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                   ImGuiTableFlags_SizingStretchProp)) {
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0.18f);
-            ImGui::TableSetupColumn("Engine", ImGuiTableColumnFlags_WidthStretch, 0.10f);
+            ImGui::TableSetupColumn("Engine", ImGuiTableColumnFlags_WidthStretch, 0.16f);
             ImGui::TableSetupColumn("Last opened", ImGuiTableColumnFlags_WidthStretch, 0.16f);
-            ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.40f);
+            ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.34f);
             ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthStretch, 0.16f);
             ImGui::TableHeadersRow();
             for (KnownProject* p : sorted) {
@@ -181,28 +244,61 @@ struct HubUI {
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(p->name.c_str());
                 ImGui::TableNextColumn();
+                // Base-engine picker: change which installed engine version this
+                // project is pinned to (writes only the manifest's engineVersion).
                 bool exact = false;
                 state.engineFor(p->engineVersion, &exact);
-                ImGui::TextUnformatted(p->engineVersion.c_str());
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::BeginCombo("##engine", p->engineVersion.c_str())) {
+                    for (const EngineInstall& e : state.engines) {
+                        bool sel = e.version == p->engineVersion;
+                        if (ImGui::Selectable(e.version.c_str(), sel) && !sel)
+                            repinProject(*p, e.version);
+                        if (sel) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
                 if (!exact && ImGui::IsItemHovered())
-                    ImGui::SetTooltip("This engine version is not installed;\n"
-                                      "the newest install will be used.");
-                if (!exact) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "(!)");
+                    ImGui::SetTooltip("Pinned engine %s is not installed;\n"
+                                      "the newest install is used until you re-pin.",
+                                      p->engineVersion.c_str());
+                if (const EngineInstall* up = state.newestCompatibleEngine(p->engineVersion)) {
+                    ImGui::SameLine(0, 4);
+                    ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.55f, 1.0f), "\xE2\x86\x91");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("A newer compatible engine (%s) is installed.\n"
+                                          "Open to switch, or pick it above.",
+                                          up->version.c_str());
                 }
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(whenText(p->lastOpened).c_str());
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("%s", p->path.c_str());
                 ImGui::TableNextColumn();
-                if (ImGui::SmallButton("Open")) openProject(*p);
+                if (ImGui::SmallButton("Open")) pendingOpen = p->path;
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Remove")) toRemove = p->path;
                 ImGui::PopID();
             }
             ImGui::EndTable();
         }
+        // Resolve a clicked Open: if a newer COMPATIBLE engine is installed, ask
+        // whether to switch the project to it; otherwise open straight away.
+        if (!pendingOpen.empty()) {
+            KnownProject* p = findProject(pendingOpen);
+            pendingOpen.clear();
+            if (p) {
+                const EngineInstall* up = state.newestCompatibleEngine(p->engineVersion);
+                if (up) {
+                    switchProjPath = p->path;
+                    switchToVersion = up->version;
+                    ImGui::OpenPopup("Switch base engine?");
+                } else {
+                    openProject(*p);
+                }
+            }
+        }
+        drawSwitchModal();
         if (!toRemove.empty()) {
             state.projects.erase(std::remove_if(state.projects.begin(), state.projects.end(),
                                                 [&](const KnownProject& p) {

@@ -2,16 +2,285 @@
 #include "../core/http.h"
 #include "../core/log.h"
 #include "../core/paths.h"
+#include "../engine/component_registry.h"
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <cctype>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 
 namespace fs = std::filesystem;
 
 namespace ae {
+
+namespace { // defined below; used by the helpers here
+std::string jsonToText(const JsonValue& v);
+std::string readTextFile(const std::string& path);
+}
+
+// Local models paraphrase schema keys ("increment" for "title", "specialist"
+// for "agent", "details" for "detail", ...). Read the first key that's present
+// so parsing survives that drift instead of silently dropping the whole plan.
+static std::string jsonFirstString(const JsonValue& j,
+                                   std::initializer_list<const char*> keys) {
+    for (const char* k : keys)
+        if (const std::string* s = j.string(k)) return *s;
+    return {};
+}
+static const JsonValue* jsonFirstArray(const JsonValue& j,
+                                       std::initializer_list<const char*> keys) {
+    for (const char* k : keys)
+        if (const JsonValue* v = j.find(k))
+            if (v->type == JsonValue::Array) return v;
+    return nullptr;
+}
+
+static std::string toLower(std::string s) {
+    for (char& c : s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+// A step field that is just a role word ("design"/"code"/...) is the agent, not
+// the step's description — some models put the role in "step" and the task text
+// in "action".
+static bool isRoleWord(const std::string& v) {
+    std::string s = toLower(v);
+    return s == "design" || s == "designer" || s == "code" || s == "coder" ||
+           s == "programming" || s == "programmer" || s == "gameplay";
+}
+
+// "new_zone" / "plan-1" -> "New Zone" / "Plan 1" (title fallback from a JSON key).
+static std::string prettifyKey(std::string s) {
+    for (char& c : s)
+        if (c == '_' || c == '-') c = ' ';
+    bool cap = true;
+    for (char& c : s) {
+        if (cap && c >= 'a' && c <= 'z') c = (char)(c - 32);
+        cap = (c == ' ');
+    }
+    return s;
+}
+
+// The planner's JSON shape changes every run (2-3 plans-with-steps, a category
+// tree, or — this is the important one — a FLAT list where each item is itself a
+// single step). Instead of matching shapes, we normalize around one unit: the
+// STEP. A plan is just a group of steps; when there is no grouping, all the
+// steps ARE one plan. Everything below reads fields by alias and looks into a
+// nested "details" object, because models scatter the real content there.
+
+// Pulls file paths out of a step object (+ its nested details): single-string
+// keys and string arrays alike.
+static void collectStepFiles(const JsonValue& j, std::vector<std::string>& out) {
+    for (const char* k : {"file", "file_path", "filePath", "path", "artifact", "output"})
+        if (const std::string* s = j.string(k))
+            if (!s->empty()) out.push_back(*s);
+    for (const char* k : {"files", "file_paths", "artifacts", "paths", "outputs"})
+        if (const JsonValue* a = j.find(k))
+            if (a->type == JsonValue::Array)
+                for (size_t i = 0; i < a->size(); ++i)
+                    if ((*a)[i].type == JsonValue::String) out.push_back((*a)[i].str);
+    for (const char* k : {"details", "detail", "info"})
+        if (const JsonValue* d = j.find(k))
+            if (d->type == JsonValue::Object) collectStepFiles(*d, out);
+}
+
+// Normalize any "step-ish" object to a PlanStep; appends its file paths to `files`.
+static DevTeam::PlanStep extractStep(const JsonValue& sj, std::vector<std::string>& files) {
+    const JsonValue* det = nullptr;
+    for (const char* k : {"details", "detail", "info"})
+        if (const JsonValue* d = sj.find(k))
+            if (d->type == JsonValue::Object) { det = d; break; }
+
+    DevTeam::PlanStep st;
+    st.agent = jsonFirstString(sj, {"agent", "specialist", "role", "who"});
+    std::string stepTxt = jsonFirstString(sj, {"step", "title", "name"});
+    // "step":"design" — the role is in step, the real task is elsewhere.
+    if (st.agent.empty() && isRoleWord(stepTxt)) { st.agent = stepTxt; stepTxt.clear(); }
+    std::string action = jsonFirstString(sj, {"action", "task", "description", "what", "goal"});
+    if (action.empty() && det)
+        action = jsonFirstString(*det, {"task", "action", "description", "step", "title", "what"});
+    if (stepTxt.empty() && det) stepTxt = jsonFirstString(*det, {"step", "title", "name"});
+    st.title = !stepTxt.empty() ? stepTxt : action;
+    if (st.title.empty()) st.title = jsonFirstString(sj, {"detail", "summary"});
+    st.detail = (!action.empty() && action != st.title) ? action : "";
+    st.agent = (toLower(st.agent) == "design" || toLower(st.agent) == "designer") ? "design" : "code";
+    collectStepFiles(sj, files);
+    return st;
+}
+
+// The first array of step-OBJECTS an object owns (steps/tasks/actions/...).
+static const JsonValue* stepsArrayOf(const JsonValue& obj) {
+    const JsonValue* a = jsonFirstArray(obj, {"steps", "tasks", "actions", "subtasks"});
+    return (a && a->size() > 0 && (*a)[0].type == JsonValue::Object) ? a : nullptr;
+}
+
+// Pass 1: real plans — objects that own a steps array — however nested.
+static void collectPlanNodes(const JsonValue& j, const std::string& hint,
+                             std::vector<DevTeam::Plan>& out) {
+    if (j.type == JsonValue::Array) {
+        for (size_t i = 0; i < j.size(); ++i) collectPlanNodes(j[i], hint, out);
+        return;
+    }
+    if (j.type != JsonValue::Object) return;
+    if (const JsonValue* steps = stepsArrayOf(j)) {
+        DevTeam::Plan p;
+        p.title = jsonFirstString(j, {"title", "increment", "name", "approach"});
+        if (p.title.empty() && !hint.empty()) p.title = prettifyKey(hint);
+        p.summary = jsonFirstString(j, {"summary", "description", "overview"});
+        for (size_t k = 0; k < steps->size(); ++k)
+            p.steps.push_back(extractStep((*steps)[k], p.artifacts));
+        if (const JsonValue* arts = jsonFirstArray(j, {"artifacts", "files", "outputs"}))
+            for (size_t k = 0; k < arts->size(); ++k)
+                if ((*arts)[k].type == JsonValue::String) p.artifacts.push_back((*arts)[k].str);
+        if (p.title.empty()) p.title = "Plan " + std::to_string(out.size() + 1);
+        if (!p.steps.empty()) out.push_back(std::move(p));
+        return;
+    }
+    for (const auto& kv : j.obj) {
+        std::string h = hint.empty() ? kv.first : hint + " " + kv.first;
+        collectPlanNodes(kv.second, h, out);
+    }
+}
+
+// A step-ish object carries descriptive text or a role (fallback pass only).
+static bool looksLikeStep(const JsonValue& j) {
+    return j.type == JsonValue::Object &&
+           (!jsonFirstString(j, {"step", "action", "task", "title", "name", "description"}).empty() ||
+            !jsonFirstString(j, {"specialist", "agent", "role"}).empty());
+}
+
+// Pass 2 (fallback): no steps arrays anywhere — the items themselves are steps.
+static void collectLooseSteps(const JsonValue& j, DevTeam::Plan& plan) {
+    if (j.type == JsonValue::Array) {
+        for (size_t i = 0; i < j.size(); ++i) collectLooseSteps(j[i], plan);
+        return;
+    }
+    if (j.type != JsonValue::Object) return;
+    if (looksLikeStep(j)) { plan.steps.push_back(extractStep(j, plan.artifacts)); return; }
+    for (const auto& kv : j.obj) collectLooseSteps(kv.second, plan);
+}
+
+// Turn any planner response into 1+ plans: prefer real grouped plans; if the
+// model produced a bare list of steps, wrap them into a single plan.
+static std::vector<DevTeam::Plan> normalizePlans(const JsonValue& parsed) {
+    const JsonValue* root = parsed.find("plans");
+    if (!root) root = parsed.find("increments");
+    if (!root) root = parsed.find("plan");
+    const JsonValue& r = root ? *root : parsed;
+
+    std::vector<DevTeam::Plan> out;
+    collectPlanNodes(r, "", out);
+    if (out.empty()) {
+        DevTeam::Plan single;
+        single.title = "Proposed plan";
+        collectLooseSteps(r, single);
+        if (!single.steps.empty()) out.push_back(std::move(single));
+    }
+    return out;
+}
+
+// Same shape-tolerance for specialist output: a "file" is any object carrying
+// both a path and content (under whatever key names / nesting the model chose).
+struct RawFile {
+    std::string path, kind, description, content;
+};
+static void collectFiles(const JsonValue& j, std::vector<RawFile>& out) {
+    if (j.type == JsonValue::Array) {
+        for (size_t i = 0; i < j.size(); ++i) collectFiles(j[i], out);
+        return;
+    }
+    if (j.type != JsonValue::Object) return;
+    std::string path =
+        jsonFirstString(j, {"path", "file", "filename", "filePath", "relPath", "name"});
+    std::string content = jsonFirstString(j, {"content", "code", "text", "body", "data", "source"});
+    // Models often return a .json file's content as a real JSON OBJECT/ARRAY
+    // (not a string) — serialize it back to text so the proposal is usable.
+    if (content.empty())
+        for (const char* k : {"content", "data", "body", "json", "file"})
+            if (const JsonValue* cv = j.find(k))
+                if (cv->type == JsonValue::Object || cv->type == JsonValue::Array) {
+                    content = jsonToText(*cv);
+                    break;
+                }
+    if (!path.empty() && !content.empty()) {
+        RawFile f;
+        f.path = path;
+        f.content = content;
+        f.kind = jsonFirstString(j, {"kind", "type", "category"});
+        f.description = jsonFirstString(j, {"description", "detail", "summary", "purpose"});
+        out.push_back(std::move(f));
+        return;
+    }
+    for (const auto& kv : j.obj) collectFiles(kv.second, out);
+}
+
+// Grounding: include a few REAL project files verbatim so the specialist copies
+// the engine's ACTUAL formats. Local models follow a concrete example far better
+// than a prose schema — this is the single biggest lever on output quality. Uses
+// the smallest .json in each asset dir (the cleanest minimal example).
+static std::string assetExamples(const std::string& root) {
+    struct Pick { const char* dir; const char* label; };
+    const Pick picks[] = {{"assets/maps", "SCENE (assets/maps/*.json)"},
+                          {"assets/scripts", "SCRIPT GRAPH (assets/scripts/*.json)"},
+                          {"assets/data", "DATA TABLE (assets/data/*.json)"},
+                          {"assets/ui", "UI DOCUMENT (assets/ui/*.json)"}};
+    std::ostringstream o;
+    for (const Pick& p : picks) {
+        std::string best;
+        uintmax_t bestSize = UINTMAX_MAX;
+        std::error_code ec;
+        for (fs::directory_iterator it(joinPath(root, p.dir), ec), end; it != end && !ec;
+             it.increment(ec)) {
+            if (it->is_directory() || it->path().extension() != ".json") continue;
+            uintmax_t sz = fs::file_size(it->path(), ec);
+            if (!ec && sz < bestSize) { bestSize = sz; best = it->path().string(); }
+        }
+        if (best.empty()) continue;
+        std::string content = readTextFile(best);
+        if (content.size() > 2500) content = content.substr(0, 2500) + "\n...(truncated)";
+        o << "=== " << p.label << " — copy this exact structure/keys ===\n" << content << "\n\n";
+    }
+    return o.str();
+}
+
+// Validation: check a proposed file against the engine's real format so broken
+// output is caught BEFORE it's written (and can be fed back to the specialist).
+// Returns "" when fine, else a semicolon list of problems.
+static std::string validateProposal(const std::string& path, const std::string& content) {
+    bool isJson = path.size() > 5 && toLower(path.substr(path.size() - 5)) == ".json";
+    if (!isJson) return {};
+    JsonValue doc;
+    if (!jsonParse(content.c_str(), content.size(), doc)) return "not valid JSON";
+
+    std::ostringstream out;
+    auto add = [&](const std::string& s) { out << (out.tellp() > 0 ? "; " : "") << s; };
+    bool haveRegistry = !componentRegistry().all().empty();
+
+    // A scene is recognizable by an "entities" array — validate its structure
+    // against the loader's expectations (the #1 source of "applied but broken").
+    if (const JsonValue* ents = doc.find("entities")) {
+        if (!doc.find("version")) add("scene is missing top-level \"version\": 1");
+        for (size_t i = 0; i < ents->size(); ++i) {
+            const JsonValue& e = (*ents)[i];
+            std::string nm = e.string("name") ? *e.string("name") : ("entity[" + std::to_string(i) + "]");
+            if (!e.find("position") || !e.find("rotation") || !e.find("scale"))
+                add(nm + ": needs position[3]+rotation[4]+scale[3]");
+            const JsonValue* comps = e.find("components");
+            if (!comps) { add(nm + ": no \"components\" array"); continue; }
+            for (size_t c = 0; c < comps->size(); ++c) {
+                const std::string* t = (*comps)[c].string("type");
+                if (!t || t->empty()) { add(nm + ": a component has no \"type\""); continue; }
+                if (haveRegistry && !componentRegistry().find(*t))
+                    add(nm + ": unknown component \"" + *t + "\"");
+            }
+        }
+    }
+    return out.str();
+}
 
 // ---------------------------------------------------------------------------
 // personas
@@ -426,9 +695,12 @@ void DevTeam::planJob(std::string prompt) {
     opt.jsonSchema =
         "{ \"plans\": [ { \"title\": \"short name of the approach\", \"summary\": "
         "\"2-3 sentences: what gets built and why this approach\", \"steps\": [ { "
-        "\"title\": \"step\", \"detail\": \"what exactly\", \"agent\": \"code or "
-        "design\" } ], \"artifacts\": [ \"project-relative file paths that will be "
-        "created\" ] } ] } - return exactly 2 or 3 genuinely different complete plans";
+        "\"title\": \"what to do, as a full sentence\", \"agent\": \"code\" or "
+        "\"design\", \"file\": \"project-relative path this step creates (optional)\" "
+        "} ] } ] } . Rules: 'plans' is a flat ARRAY of 2-3 alternative complete "
+        "plans. Each plan has a 'steps' ARRAY. Put the human-readable instruction "
+        "in the step's 'title'; put the role in 'agent'. Do NOT nest the step text "
+        "inside a 'details' object. Use these exact field names.";
     opt.knowledge = true;
     opt.reflection = true;
     opt.maxTokens = 3500;
@@ -441,50 +713,36 @@ void DevTeam::planJob(std::string prompt) {
     opt.context.push_back(bridgeContext(client_));
 
     PulseChatResult r = client_->chat(plannerId, prompt, opt);
+    // Always capture the raw response — the panel's "raw" button shows it, which
+    // is the fastest way to see WHY a model's output failed to parse.
+    {
+        std::lock_guard<std::mutex> l(mtx_);
+        AgentSlot* s = slot("planner");
+        s->lastRaw = r.content;
+        s->thoughts = r.thoughts;
+        s->citations = r.knowledgeUsed;
+        if (!r.sessionId.empty()) plannerSession_ = r.sessionId;
+    }
     if (!r.ok) {
         setAgent("planner", State::Error);
         setStage(StagePlan, State::Error, r.error);
         return;
     }
-    {
-        std::lock_guard<std::mutex> l(mtx_);
-        AgentSlot* s = slot("planner");
-        s->state = State::Done;
-        s->thoughts = r.thoughts;
-        s->citations = r.knowledgeUsed;
-        plannerSession_ = r.sessionId;
-    }
     if (!r.hasParsed) {
-        setStage(StagePlan, State::Error, "planner returned no valid JSON");
+        setAgent("planner", State::Error);
+        setStage(StagePlan, State::Error,
+                 "planner did not return JSON — click 'raw' on the Planner to see its output");
         return;
     }
+    { std::lock_guard<std::mutex> l(mtx_); slot("planner")->state = State::Done; }
 
-    std::vector<Plan> parsed;
-    if (const JsonValue* plans = r.parsed.find("plans")) {
-        for (size_t i = 0; i < plans->size(); ++i) {
-            const JsonValue& pj = (*plans)[i];
-            Plan p;
-            if (const std::string* s = pj.string("title")) p.title = *s;
-            if (const std::string* s = pj.string("summary")) p.summary = *s;
-            if (const JsonValue* steps = pj.find("steps"))
-                for (size_t k = 0; k < steps->size(); ++k) {
-                    const JsonValue& sj = (*steps)[k];
-                    PlanStep st;
-                    if (const std::string* s = sj.string("title")) st.title = *s;
-                    if (const std::string* s = sj.string("detail")) st.detail = *s;
-                    if (const std::string* s = sj.string("agent")) st.agent = *s;
-                    if (st.agent != "design") st.agent = "code";
-                    p.steps.push_back(std::move(st));
-                }
-            if (const JsonValue* arts = pj.find("artifacts"))
-                for (size_t k = 0; k < arts->size(); ++k)
-                    if ((*arts)[k].type == JsonValue::String)
-                        p.artifacts.push_back((*arts)[k].str);
-            if (!p.title.empty()) parsed.push_back(std::move(p));
-        }
-    }
+    // normalizePlans handles every shape seen from local models: 2-3 plans each
+    // with steps, a category tree, or a flat list of bare steps (→ one plan).
+    std::vector<Plan> parsed = normalizePlans(r.parsed);
     if (parsed.empty()) {
-        setStage(StagePlan, State::Error, "no plans in planner response");
+        setAgent("planner", State::Error);
+        setStage(StagePlan, State::Error,
+                 "planner JSON had no usable plans — click 'raw' on the Planner to inspect");
         return;
     }
     {
@@ -534,63 +792,95 @@ bool DevTeam::specialistTurn(const std::string& role, const std::string& message
     opt.maxTokens = 4000;
     opt.temperature = 0.3f;
     opt.context.push_back({"project", "Existing project files", projectInventory(projectRoot_)});
+    if (std::string ex = assetExamples(projectRoot_); !ex.empty())
+        opt.context.push_back({"examples", "Real project files — match these formats EXACTLY", ex});
     opt.context.push_back(bridgeContext(client_));
 
     PulseChatResult r = client_->chat(agentId, message, opt);
+    {
+        std::lock_guard<std::mutex> l(mtx_);
+        AgentSlot* s = slot(role);
+        s->lastRaw = r.content; // keep raw output for the panel's "raw" viewer
+        s->thoughts = r.thoughts;
+        s->citations = r.knowledgeUsed;
+        if (!r.sessionId.empty()) s->sessionId = r.sessionId;
+    }
     if (!r.ok) {
         setAgent(role, State::Error);
         setStage(StageGenerate, State::Error, role + ": " + r.error);
         return false;
     }
-    {
-        std::lock_guard<std::mutex> l(mtx_);
-        AgentSlot* s = slot(role);
-        s->state = State::Done;
-        s->thoughts = r.thoughts;
-        s->citations = r.knowledgeUsed;
-        if (!r.sessionId.empty()) s->sessionId = r.sessionId;
-    }
     if (!r.hasParsed) {
-        setStage(StageGenerate, State::Error, role + " returned no JSON");
+        setAgent(role, State::Error);
+        setStage(StageGenerate, State::Error,
+                 role + " did not return JSON — click 'raw' on the agent to inspect");
         return false;
     }
+    { std::lock_guard<std::mutex> l(mtx_); slot(role)->state = State::Done; }
 
-    if (const JsonValue* files = r.parsed.find("files")) {
-        for (size_t i = 0; i < files->size(); ++i) {
-            const JsonValue& fj = (*files)[i];
-            Proposal p;
-            if (const std::string* s = fj.string("path")) p.path = *s;
-            if (const std::string* s = fj.string("kind")) p.kind = *s;
-            if (const std::string* s = fj.string("description")) p.description = *s;
-            if (const std::string* s = fj.string("content")) p.content = *s;
-            p.agent = role;
-            if (p.path.empty() || p.content.empty()) continue;
-            p.exists = pathExists(joinPath(projectRoot_, p.path));
-            if (p.path.size() > 5 && p.path.substr(p.path.size() - 5) == ".json") {
-                JsonValue chk;
-                p.jsonValid = jsonParse(p.content.c_str(), p.content.size(), chk);
-            }
-            std::lock_guard<std::mutex> l(mtx_);
-            bool replaced = false;
-            for (Proposal& old : proposals_)
-                if (old.path == p.path) {
-                    old = p; // revision: back to un-applied, re-reviewed
-                    replaced = true;
-                    break;
-                }
-            if (!replaced) proposals_.push_back(p);
-            log_.push_back(role + (replaced ? " revised " : " proposed ") + p.path +
-                           (p.jsonValid ? "" : " (INVALID JSON)"));
+    // Collect proposed files wherever/however the model nested them.
+    std::vector<RawFile> rawFiles;
+    const JsonValue* filesNode = jsonFirstArray(r.parsed, {"files", "artifacts", "outputs"});
+    collectFiles(filesNode ? *filesNode : r.parsed, rawFiles);
+    for (const RawFile& rf : rawFiles) {
+        Proposal p;
+        p.path = rf.path;
+        p.kind = rf.kind;
+        p.description = rf.description;
+        p.content = rf.content;
+        p.agent = role;
+        // If the model gave a bare filename (no folder), place it in the
+        // conventional directory for its kind so it doesn't land at the project
+        // root. Heuristic, and the user reviews every proposal before applying.
+        if (p.path.find('/') == std::string::npos && p.path.find('\\') == std::string::npos) {
+            std::string k = toLower(p.kind);
+            auto ends = [&](const char* e) {
+                size_t n = std::strlen(e);
+                return p.path.size() >= n && toLower(p.path.substr(p.path.size() - n)) == e;
+            };
+            std::string dir;
+            if (ends(".cpp") || ends(".h") || ends(".hpp") || k == "cpp" || k == "c++" ||
+                k == "source" || k == "native")
+                dir = "Source/";
+            else if (k == "map" || k == "scene" || k == "level") dir = "assets/maps/";
+            else if (k == "script" || k == "graph" || k == "blueprint") dir = "assets/scripts/";
+            else if (k == "data" || k == "datatable" || k == "table") dir = "assets/data/";
+            else if (k == "ui" || k == "uidocument" || k == "hud") dir = "assets/ui/";
+            else if (k == "material") dir = "assets/materials/";
+            else if (k == "dialogue") dir = "assets/dialogue/";
+            else if (k == "mission" || k == "missions") dir = "assets/missions/";
+            if (!dir.empty()) p.path = dir + p.path;
         }
+        p.exists = pathExists(joinPath(projectRoot_, p.path));
+        if (p.path.size() > 5 && p.path.substr(p.path.size() - 5) == ".json") {
+            JsonValue chk;
+            p.jsonValid = jsonParse(p.content.c_str(), p.content.size(), chk);
+        }
+        // Validate against the engine's real format (structure + component types).
+        p.issues = validateProposal(p.path, p.content);
+        std::lock_guard<std::mutex> l(mtx_);
+        bool replaced = false;
+        for (Proposal& old : proposals_)
+            if (old.path == p.path) {
+                old = p; // revision: back to un-applied, re-reviewed
+                replaced = true;
+                break;
+            }
+        if (!replaced) proposals_.push_back(p);
+        log_.push_back(role + (replaced ? " revised " : " proposed ") + p.path +
+                       (!p.jsonValid ? " (INVALID JSON)" : p.issues.empty() ? "" : " (format issues)"));
     }
-    if (const JsonValue* calls = r.parsed.find("bridgeCalls")) {
+    const JsonValue* calls = jsonFirstArray(r.parsed, {"bridgeCalls", "editorCalls", "calls"});
+    if (calls) {
         for (size_t i = 0; i < calls->size(); ++i) {
             const JsonValue& cj = (*calls)[i];
-            const std::string* method = cj.string("method");
-            if (!method || method->empty()) continue;
+            std::string method = jsonFirstString(cj, {"method", "name", "action"});
+            if (method.empty()) continue;
             BridgeCall bc;
-            bc.method = *method;
+            bc.method = method;
             const JsonValue* params = cj.find("params");
+            if (!params) params = cj.find("arguments");
+            if (!params) params = cj.find("args");
             bc.params = params ? jsonToText(*params) : "{}";
             bc.agent = role;
             addLog(role + " requests live-editor call: " + bc.method);

@@ -105,6 +105,45 @@ static bool parseBody(const HttpResponse& r, JsonValue& out, std::string* error)
     return true;
 }
 
+// Best-effort JSON recovery for models that don't honor the response format:
+// a local model often wraps the JSON in ```json fences or surrounds it with
+// prose ("Sure! Here are the plans: { ... }. Hope this helps!"). Direct
+// jsonParse of the whole string then fails. This finds the first balanced
+// object/array (string- and escape-aware) and parses just that.
+static bool extractJson(const std::string& text, JsonValue& out) {
+    if (jsonParse(text.c_str(), text.size(), out) &&
+        (out.type == JsonValue::Object || out.type == JsonValue::Array))
+        return true;
+    size_t start = text.find_first_of("{[");
+    while (start != std::string::npos) {
+        char open = text[start], close = open == '{' ? '}' : ']';
+        int depth = 0;
+        bool inStr = false, esc = false;
+        for (size_t i = start; i < text.size(); ++i) {
+            char c = text[i];
+            if (inStr) {
+                if (esc) esc = false;
+                else if (c == '\\') esc = true;
+                else if (c == '"') inStr = false;
+            } else if (c == '"') {
+                inStr = true;
+            } else if (c == open) {
+                ++depth;
+            } else if (c == close) {
+                if (--depth == 0) {
+                    std::string sub = text.substr(start, i - start + 1);
+                    if (jsonParse(sub.c_str(), sub.size(), out) &&
+                        (out.type == JsonValue::Object || out.type == JsonValue::Array))
+                        return true;
+                    break; // this candidate didn't parse — try the next opener
+                }
+            }
+        }
+        start = text.find_first_of("{[", start + 1);
+    }
+    return false;
+}
+
 // ---- endpoints ------------------------------------------------------------------
 
 bool PulseClient::online(std::string* error) {
@@ -196,10 +235,10 @@ PulseChatResult PulseClient::chat(const std::string& agentId, const std::string&
         }
     }
     if (!res.hasParsed && !opt.jsonSchema.empty()) {
-        // Some responses return the JSON only as text - parse it ourselves.
+        // The JSON came back as text (and maybe fenced/prose-wrapped, as local
+        // models often do) — recover it ourselves.
         JsonValue p;
-        if (jsonParse(res.content.c_str(), res.content.size(), p) &&
-            (p.type == JsonValue::Object || p.type == JsonValue::Array)) {
+        if (extractJson(res.content, p)) {
             res.parsed = std::move(p);
             res.hasParsed = true;
         }
@@ -259,8 +298,7 @@ PulseChatResult PulseClient::complete(const std::string& systemPrompt,
     if (const std::string* s = doc.string("content")) res.content = *s;
     if (json) {
         JsonValue p;
-        if (jsonParse(res.content.c_str(), res.content.size(), p) &&
-            (p.type == JsonValue::Object || p.type == JsonValue::Array)) {
+        if (extractJson(res.content, p)) {
             res.parsed = std::move(p);
             res.hasParsed = true;
         }

@@ -34,15 +34,22 @@ unsigned mgTypeColor(MGType t) { // ABGR
 
 // ---- codegen context ------------------------------------------------------------
 struct MGEmitCtx {
-    // Distinct (path, srgb) texture slots, capped at 4 (units 10..13).
+    // Distinct (path, srgb) texture slots, capped at 8 (units 13..20) —
+    // shared across the whole graph including inlined subgraphs.
     std::vector<std::pair<std::string, bool>> textures;
     int textureSlot(const std::string& path, bool srgb) {
         for (size_t i = 0; i < textures.size(); ++i)
             if (textures[i].first == path && textures[i].second == srgb) return (int)i;
-        if (textures.size() >= 4) return -1;
+        if (textures.size() >= 8) return -1;
         textures.push_back({path, srgb});
         return (int)textures.size() - 1;
     }
+
+    // Subgraph inlining (Subgraph node): loader + per-compile file cache +
+    // recursion guard (self-reference or 8 levels deep stops expansion).
+    MGSubLoader loadSub;
+    std::map<std::string, MaterialGraph> subCache;
+    std::vector<std::string> subStack;
 };
 
 static std::string glslType(MGType t) {
@@ -170,6 +177,17 @@ std::vector<MGNodeDef> buildDefs() {
             return "texture(uMGTex" + std::to_string(slot) + ", " + in[0] + ").a";
         });
 
+    b.emplace_back("NormalMap", "Texture", MGType::F3);
+    b.back().in("UV", MGType::F2, "fs.uv").params("Image path", "Strength (def 1)").emit(
+        [](const MGNode& n, const std::vector<std::string>& in, MGEmitCtx& ctx) {
+            if (n.p.empty()) return std::string("vec3(0.0, 0.0, 1.0)"); // flat
+            int slot = ctx.textureSlot(n.p, /*srgb=*/false);
+            if (slot < 0) return std::string("vec3(0.0, 0.0, 1.0)"); // slot cap hit
+            float s = n.n > 0.0f ? n.n : 1.0f;
+            return "mgUnpackNormal(texture(uMGTex" + std::to_string(slot) + ", " + in[0] +
+                   ").xyz, " + num(s) + ")";
+        });
+
     b.emplace_back("Panner", "Texture", MGType::F2);
     b.back().in("UV", MGType::F2, "fs.uv").params(nullptr, nullptr, "Speed XY").emit(
         [](const MGNode& n, const std::vector<std::string>& in, MGEmitCtx&) {
@@ -226,6 +244,31 @@ std::vector<MGNodeDef> buildDefs() {
             return "dot(" + in[0] + ", " + in[1] + ")";
         });
 
+    // ---- Functions (subgraphs) ----
+    // Subgraph inlines another assets/materials/*.json at compile time; its
+    // SubInput nodes receive this node's A-D, its SubOutput is the result.
+    // The Generator intercepts these three types; the emit lambdas are only
+    // fallbacks (unresolved file / used outside a subgraph).
+    b.emplace_back("Subgraph", "Function", MGType::F3);
+    b.back()
+        .in("A", MGType::F3, "vec3(0.0)")
+        .in("B", MGType::F3, "vec3(0.0)")
+        .in("C", MGType::F3, "vec3(0.0)")
+        .in("D", MGType::F3, "vec3(0.0)")
+        .params("Graph path (assets/materials/*.json)")
+        .emit([](const MGNode&, const std::vector<std::string>&, MGEmitCtx&) {
+            return std::string("vec3(1.0, 0.0, 1.0)"); // magenta = unresolved
+        });
+
+    b.emplace_back("SubInput", "Function", MGType::F3);
+    b.back().params("Label", "Pin index (0 = A .. 3 = D)").emit(
+        [](const MGNode&, const std::vector<std::string>&, MGEmitCtx&) {
+            return std::string("vec3(0.0)"); // only meaningful inside a subgraph
+        });
+
+    b.emplace_back("SubOutput", "Function", MGType::F3);
+    b.back().in("Value", MGType::F3, "vec3(0.0)");
+
     // ---- Output (special: consumed by the generator, never emits an expr) ----
     b.emplace_back("Output", "Output", MGType::F3);
     b.back().in("BaseColor", MGType::F3, "vec3(0.8)")
@@ -234,6 +277,7 @@ std::vector<MGNodeDef> buildDefs() {
         .in("Emissive", MGType::F3, "vec3(0.0)")
         .in("Opacity", MGType::F1, "1.0")
         .in("AO", MGType::F1, "1.0")
+        .in("Normal", MGType::F3, "vec3(0.0, 0.0, 1.0)")
         .params(nullptr, "Transparent (1 = blend)");
 
     std::vector<MGNodeDef> out;
@@ -260,10 +304,12 @@ namespace {
 struct Generator {
     const MaterialGraph& g;
     MGEmitCtx& ctx;
-    std::ostringstream lines;
+    std::ostringstream& lines; // shared with subgraph expansions
+    int& varCounter;
+    // Bound when generating an inlined subgraph: expressions for SubInput 0-3.
+    const std::vector<std::string>* subInputs = nullptr;
     std::map<int, std::string> emitted; // nodeIdx -> var name
     std::set<int> inProgress;           // cycle guard
-    int varCounter = 0;
 
     // Emits node `idx` (once) and returns an expression of its out type.
     std::string emitNode(int idx) {
@@ -280,12 +326,52 @@ struct Generator {
         for (size_t p = 0; p < def->in.size(); ++p)
             inExpr.push_back(inputExpr(n, *def, (int)p));
 
-        std::string expr = def->emit(n, inExpr, ctx);
+        std::string expr;
+        if (n.type == "Subgraph") expr = emitSubgraph(n, inExpr);
+        else if (n.type == "SubInput" && subInputs) {
+            int k = (int)n.n;
+            expr = k >= 0 && k < (int)subInputs->size() ? (*subInputs)[k] : "vec3(0.0)";
+        } else expr = def->emit(n, inExpr, ctx);
+
         std::string var = "mg" + std::to_string(varCounter++);
         lines << "    " << glslType(def->out) << " " << var << " = " << expr << ";\n";
         emitted[idx] = var;
         inProgress.erase(idx);
         return var;
+    }
+
+    // Inlines the referenced graph: its SubInput nodes read this node's
+    // A-D expressions, its SubOutput's input is the result.
+    std::string emitSubgraph(const MGNode& n, const std::vector<std::string>& inExpr) {
+        const std::string magenta = "vec3(1.0, 0.0, 1.0)";
+        if (n.p.empty() || !ctx.loadSub) return magenta;
+        if (ctx.subStack.size() >= 8) return magenta; // depth cap
+        for (const std::string& p : ctx.subStack)
+            if (p == n.p) return magenta; // recursive reference
+
+        auto it = ctx.subCache.find(n.p);
+        if (it == ctx.subCache.end()) {
+            MaterialGraph sub;
+            if (!ctx.loadSub(n.p, sub)) {
+                AE_WARN("[MatGraph] Subgraph file not found: %s", n.p.c_str());
+                return magenta;
+            }
+            it = ctx.subCache.emplace(n.p, std::move(sub)).first;
+        }
+        const MaterialGraph& sub = it->second;
+        int so = -1;
+        for (size_t i = 0; i < sub.nodes.size(); ++i)
+            if (sub.nodes[i].type == "SubOutput") { so = (int)i; break; }
+        if (so < 0) {
+            AE_WARN("[MatGraph] subgraph %s has no SubOutput node", n.p.c_str());
+            return magenta;
+        }
+
+        ctx.subStack.push_back(n.p);
+        Generator sg{sub, ctx, lines, varCounter, &inExpr};
+        std::string expr = sg.inputExpr(sub.nodes[so], *materialNodeDef("SubOutput"), 0);
+        ctx.subStack.pop_back();
+        return expr;
     }
 
     // Expression for one input pin (linked node converted to pin type, or default).
@@ -304,15 +390,17 @@ struct Generator {
 
 } // namespace
 
-bool generateMaterialGLSL(const MaterialGraph& g, std::string& declsOut, std::string& codeOut,
-                          std::vector<std::pair<std::string, bool>>& texturesOut) {
-    int out = g.outputNode();
-    if (out < 0) return false;
-    const MGNode& o = g.nodes[out];
+bool generateMaterialGLSL(const MaterialGraph& g, MGGenerated& out, const MGSubLoader& loadSub) {
+    int outIdx = g.outputNode();
+    if (outIdx < 0) return false;
+    const MGNode& o = g.nodes[outIdx];
     const MGNodeDef* odef = materialNodeDef("Output");
 
     MGEmitCtx ctx;
-    Generator gen{g, ctx};
+    ctx.loadSub = loadSub;
+    std::ostringstream lines;
+    int varCounter = 0;
+    Generator gen{g, ctx, lines, varCounter};
 
     std::string base = gen.inputExpr(o, *odef, 0);
     std::string metal = gen.inputExpr(o, *odef, 1);
@@ -320,22 +408,39 @@ bool generateMaterialGLSL(const MaterialGraph& g, std::string& declsOut, std::st
     std::string emis = gen.inputExpr(o, *odef, 3);
     std::string opac = gen.inputExpr(o, *odef, 4);
     std::string aoE = gen.inputExpr(o, *odef, 5);
+    bool hasNormal = o.in.size() > 6 && !o.in[6].empty() && g.indexOf(o.in[6]) >= 0;
+    std::string nrm = hasNormal ? gen.inputExpr(o, *odef, 6) : std::string();
 
     std::ostringstream code;
-    code << gen.lines.str();
+    code << lines.str();
     code << "    albedo = " << base << ";\n";
     code << "    metallic = " << metal << ";\n";
     code << "    roughness = " << rough << ";\n";
     code << "    emissiveV = " << emis << ";\n";
     code << "    alpha = uBaseColor.a * (" << opac << ");\n";
     code << "    ao = " << aoE << ";\n";
-    codeOut = code.str();
+    out.code = code.str();
+
+    // Tangent-space normal output: spliced where the standard path would
+    // apply the material's normal map (geoN/N are in scope there).
+    out.normalCode.clear();
+    if (hasNormal) {
+        out.normalCode = "    {\n        vec3 mgTn = normalize(" + nrm + ");\n"
+                         "        mat3 mgTBN = mat3(normalize(fs.tangent), "
+                         "normalize(fs.bitangent), geoN);\n"
+                         "        N = normalize(mgTBN * mgTn);\n    }\n";
+    }
 
     std::ostringstream decls;
+    decls << "vec3 mgUnpackNormal(vec3 t, float s) {\n"
+             "    vec3 n = t * 2.0 - 1.0;\n"
+             "    n.xy *= s;\n"
+             "    return normalize(n);\n"
+             "}\n";
     for (size_t i = 0; i < ctx.textures.size(); ++i)
-        decls << "layout(binding = " << (10 + i) << ") uniform sampler2D uMGTex" << i << ";\n";
-    declsOut = decls.str();
-    texturesOut = ctx.textures;
+        decls << "layout(binding = " << (13 + i) << ") uniform sampler2D uMGTex" << i << ";\n";
+    out.decls = decls.str();
+    out.textures = ctx.textures;
     return true;
 }
 
@@ -419,19 +524,36 @@ bool loadMaterialGraph(MaterialGraph& g, const std::string& path) {
 }
 
 // ---- asset compilation --------------------------------------------------------------
+
+// Resolves a project-relative asset path ("assets/...") against the project
+// root three levels up from assets/materials/<file>.json. Absolute paths pass
+// through.
+static std::string resolveProjectRel(const std::string& graphAbsPath, const std::string& rel) {
+    if (rel.size() > 1 && (rel[1] == ':' || rel[0] == '/')) return rel;
+    std::string dir = graphAbsPath;
+    for (int up = 0; up < 3; ++up) { // <file>.json -> materials -> assets -> root
+        size_t s = dir.find_last_of("\\/");
+        if (s == std::string::npos) break;
+        dir = dir.substr(0, s);
+    }
+    return dir + "/" + rel;
+}
+
 bool MaterialGraphAsset::compile(const std::string& absPath) {
     valid = false;
     path = absPath;
     if (!loadMaterialGraph(graph, absPath)) return false;
 
-    std::string decls, code;
-    std::vector<std::pair<std::string, bool>> texRefs;
-    if (!generateMaterialGLSL(graph, decls, code, texRefs)) {
+    MGGenerated gen;
+    MGSubLoader loadSub = [&absPath](const std::string& rel, MaterialGraph& out) {
+        return loadMaterialGraph(out, resolveProjectRel(absPath, rel));
+    };
+    if (!generateMaterialGLSL(graph, gen, loadSub)) {
         AE_ERROR("[MatGraph] %s has no Output node", absPath.c_str());
         return false;
     }
 
-    // Splice the generated block into the standard PBR fragment source.
+    // Splice the generated blocks into the standard PBR fragment source.
     std::string fs = loadShaderSource("pbr.frag");
     std::string vs = loadShaderSource("pbr.vert");
     if (fs.empty() || vs.empty()) return false;
@@ -439,36 +561,25 @@ bool MaterialGraphAsset::compile(const std::string& absPath) {
     if (ver == std::string::npos) return false;
     fs.insert(ver + 1, "#define MATERIAL_GRAPH\n");
     size_t dm = fs.find("//__MG_DECLS__");
-    if (dm != std::string::npos) fs.replace(dm, strlen("//__MG_DECLS__"), decls);
+    if (dm != std::string::npos) fs.replace(dm, strlen("//__MG_DECLS__"), gen.decls);
     size_t cm = fs.find("//__MG_CODE__");
-    if (cm != std::string::npos) fs.replace(cm, strlen("//__MG_CODE__"), code);
+    if (cm != std::string::npos) fs.replace(cm, strlen("//__MG_CODE__"), gen.code);
+    size_t nm = fs.find("//__MG_NORMAL__");
+    if (nm != std::string::npos) fs.replace(nm, strlen("//__MG_NORMAL__"), gen.normalCode);
 
     if (!shader.loadFromSource(vs, fs, absPath.c_str())) {
         AE_ERROR("[MatGraph] shader compile failed: %s", absPath.c_str());
         return false;
     }
 
-    // Load referenced textures (relative paths resolve against the graph file's
-    // project — the caller passes absolute paths in `p` after resolution, or
-    // project-relative which we resolve against the graph's directory root).
+    // Load referenced textures (project-relative paths resolve against the
+    // graph file's project root).
     for (auto& t : textures) t.destroy();
     textures.clear();
-    textures.resize(texRefs.size());
-    for (size_t i = 0; i < texRefs.size(); ++i) {
-        std::string tp = texRefs[i].first;
-        if (tp.empty()) continue;
-        // Project-relative: resolve against the assets/ root two levels up
-        // from assets/materials/<file>.json.
-        if (!(tp.size() > 1 && (tp[1] == ':' || tp[0] == '/'))) {
-            std::string dir = absPath;
-            size_t s1 = dir.find_last_of("\\/");
-            if (s1 != std::string::npos) dir = dir.substr(0, s1);          // .../materials
-            size_t s2 = dir.find_last_of("\\/");
-            if (s2 != std::string::npos) dir = dir.substr(0, s2);          // .../assets
-            size_t s3 = dir.find_last_of("\\/");
-            if (s3 != std::string::npos) dir = dir.substr(0, s3);          // project root
-            tp = dir + "/" + tp;
-        }
+    textures.resize(gen.textures.size());
+    for (size_t i = 0; i < gen.textures.size(); ++i) {
+        if (gen.textures[i].first.empty()) continue;
+        std::string tp = resolveProjectRel(absPath, gen.textures[i].first);
         std::ifstream tf(tp, std::ios::binary | std::ios::ate);
         if (!tf) {
             AE_WARN("[MatGraph] missing texture: %s", tp.c_str());
@@ -481,7 +592,7 @@ bool MaterialGraphAsset::compile(const std::string& absPath) {
         ImageData img;
         if (decodeImage(bytes.data(), bytes.size(), img))
             textures[i].createCompressed(img.width, img.height, img.rgba.data(),
-                                         texRefs[i].second,
+                                         gen.textures[i].second,
                                          contentHash64(bytes.data(), bytes.size()));
     }
 

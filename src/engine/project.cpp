@@ -77,6 +77,13 @@ bool Project::save(const std::string& path) const {
         o << ",\n  \"module\": { \"name\": \"" << jsonEsc(moduleName)
           << "\", \"sourceDir\": \"" << jsonEsc(sourceDir) << "\" }";
     }
+    if (!moduleFlags.empty()) {
+        o << ",\n  \"modules\": {";
+        for (size_t i = 0; i < moduleFlags.size(); ++i)
+            o << (i ? "," : "") << " \"" << jsonEsc(moduleFlags[i].first)
+              << "\": " << (moduleFlags[i].second ? "true" : "false");
+        o << " }";
+    }
     o << "\n}\n";
     std::ofstream f(path, std::ios::binary);
     if (!f) return false;
@@ -129,6 +136,36 @@ bool createProjectFromTemplate(const std::string& templateDir, const std::string
     if (outProjectFile) *outProjectFile = proj.file;
     AE_LOG("[Project] created '%s' at %s (template: %s)", name.c_str(), destDir.c_str(),
            tmpl.name.c_str());
+    return true;
+}
+
+bool setProjectEngineVersion(const std::string& projFile, const std::string& version,
+                             std::string* outError) {
+    auto fail = [&](const std::string& msg) {
+        if (outError) *outError = msg;
+        AE_ERROR("[Project] %s", msg.c_str());
+        return false;
+    };
+    std::string text = readTextFile(projFile);
+    if (text.empty()) return fail("cannot read manifest: " + projFile);
+
+    size_t key = text.find("\"engineVersion\"");
+    if (key == std::string::npos) {
+        // No key yet — inject one right after the opening brace.
+        size_t brace = text.find('{');
+        if (brace == std::string::npos) return fail("malformed manifest: " + projFile);
+        text.insert(brace + 1, "\n  \"engineVersion\": \"" + jsonEsc(version) + "\",");
+    } else {
+        size_t colon = text.find(':', key);
+        size_t q1 = colon == std::string::npos ? std::string::npos : text.find('"', colon + 1);
+        size_t q2 = q1 == std::string::npos ? std::string::npos : text.find('"', q1 + 1);
+        if (q2 == std::string::npos) return fail("malformed engineVersion in " + projFile);
+        text.replace(q1 + 1, q2 - q1 - 1, jsonEsc(version));
+    }
+    std::ofstream f(projFile, std::ios::binary);
+    if (!f) return fail("cannot write manifest: " + projFile);
+    f << text;
+    AE_LOG("[Project] re-pinned %s -> engine %s", projFile.c_str(), version.c_str());
     return true;
 }
 

@@ -14,6 +14,7 @@
 #include "../ui/ui_document_component.h"
 #include "particles.h"
 #include "anim_graph.h"
+#include "anim_ik.h"
 #include "../ai/nav_agent.h"
 #include "../core/log.h"
 #include <algorithm>
@@ -129,9 +130,11 @@ static void declareEngineModules() {
                 [](ComponentRegistry& r, int id) {
                     r.add<ParticlesComponent>("Particles", "Particles", "Effects", id);
                 }});
-    em.declare({"animation", "Animation", "Animator state machines (AnimGraph)", 0, true,
+    em.declare({"animation", "Animation",
+                "Animator state machines (AnimGraph) + two-bone IK", 0, true,
                 [](ComponentRegistry& r, int id) {
                     r.add<AnimatorComponent>("Animator", "Animator", "Animation", id);
+                    r.add<TwoBoneIKComponent>("TwoBoneIK", "Two-Bone IK", "Animation", id);
                 }});
     em.declare({"ai", "AI Navigation", "Recast navmesh + NavAgent pathfinding", 0, true,
                 [](ComponentRegistry& r, int id) {

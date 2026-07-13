@@ -59,6 +59,7 @@ public:
         bool exists = false;     // would overwrite
         bool applied = false;
         bool jsonValid = true;   // parse-checked for .json artifacts
+        std::string issues;      // format-validation problems ("" = clean)
     };
     struct AgentSlot {
         std::string role;     // "planner" | "code" | "design"
@@ -67,6 +68,7 @@ public:
         std::string sessionId; // multi-turn: refine() continues this conversation
         State state = State::Idle;
         std::string thoughts; // last reflection trace
+        std::string lastRaw;  // last raw model response (for debugging bad output)
         std::vector<std::string> citations; // knowledge chunks used (RAG)
     };
 

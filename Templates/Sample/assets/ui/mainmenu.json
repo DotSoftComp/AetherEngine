@@ -1,0 +1,239 @@
+{
+ "uiDocument": 1,
+ "root": {
+  "id": "root",
+  "type": "Panel",
+  "anchor": [
+   0,
+   0
+  ],
+  "pivot": [
+   0,
+   0
+  ],
+  "offset": [
+   0,
+   0
+  ],
+  "size": [
+   0,
+   0
+  ],
+  "color": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "bg": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "children": [
+   {
+    "id": "logo",
+    "type": "Image",
+    "anchor": [
+     0.5,
+     0.16
+    ],
+    "pivot": [
+     0.5,
+     0.5
+    ],
+    "offset": [
+     0,
+     0
+    ],
+    "size": [
+     110,
+     110
+    ],
+    "color": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "bg": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "image": "assets/ui/logo.png"
+   },
+   {
+    "id": "title",
+    "type": "Label",
+    "anchor": [
+     0.5,
+     0.3
+    ],
+    "pivot": [
+     0.5,
+     0.5
+    ],
+    "offset": [
+     0,
+     0
+    ],
+    "size": [
+     700,
+     70
+    ],
+    "text": "AETHER MENU",
+    "color": [
+     1,
+     1,
+     1,
+     1
+    ],
+    "bg": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "fontScale": 2.6
+   },
+   {
+    "id": "play",
+    "type": "Button",
+    "anchor": [
+     0.5,
+     0.48
+    ],
+    "pivot": [
+     0.5,
+     0.5
+    ],
+    "offset": [
+     0,
+     0
+    ],
+    "size": [
+     300,
+     56
+    ],
+    "text": "PLAY",
+    "color": [
+     0.95,
+     0.96,
+     1,
+     1
+    ],
+    "bg": [
+     0.2,
+     0.19,
+     0.27,
+     0.92
+    ],
+    "fontScale": 1.5
+   },
+   {
+    "id": "options",
+    "type": "Button",
+    "anchor": [
+     0.5,
+     0.62
+    ],
+    "pivot": [
+     0.5,
+     0.5
+    ],
+    "offset": [
+     0,
+     0
+    ],
+    "size": [
+     300,
+     56
+    ],
+    "text": "OPTIONS",
+    "color": [
+     0.95,
+     0.96,
+     1,
+     1
+    ],
+    "bg": [
+     0.2,
+     0.19,
+     0.27,
+     0.92
+    ],
+    "fontScale": 1.5
+   },
+   {
+    "id": "quit",
+    "type": "Button",
+    "anchor": [
+     0.5,
+     0.76
+    ],
+    "pivot": [
+     0.5,
+     0.5
+    ],
+    "offset": [
+     0,
+     0
+    ],
+    "size": [
+     300,
+     56
+    ],
+    "text": "QUIT",
+    "color": [
+     0.95,
+     0.96,
+     1,
+     1
+    ],
+    "bg": [
+     0.2,
+     0.19,
+     0.27,
+     0.92
+    ],
+    "fontScale": 1.5
+   },
+   {
+    "id": "hint",
+    "type": "Label",
+    "anchor": [
+     0.5,
+     0.9
+    ],
+    "pivot": [
+     0.5,
+     0.5
+    ],
+    "offset": [
+     0,
+     0
+    ],
+    "size": [
+     600,
+     30
+    ],
+    "text": "Arrow keys / D-pad to navigate, Enter / A to select",
+    "color": [
+     0.7,
+     0.72,
+     0.8,
+     1
+    ],
+    "bg": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ }
+}

@@ -42,9 +42,11 @@ void applyGpuAutoTier(RenderSettings& s) {
     if (std::strstr(renderer, "Intel") || std::strstr(renderer, "Microsoft") ||
         std::strstr(renderer, "llvmpipe")) {
         s.shadowCascades = 2;
+        s.spotShadows = 1;  // one nearest spot caster on weak GPUs (0 to disable)
+        s.pointShadows = 0; // omni cubes are 6 re-rasters each — off on weak GPUs
         s.renderScale = 0.75f;
-        AE_LOG("[Renderer] integrated/software GPU (%s) - shadow cascades 2, render scale 0.75",
-               renderer);
+        AE_LOG("[Renderer] integrated/software GPU (%s) - shadow cascades 2, spot shadows 1, "
+               "point shadows 0, render scale 0.75", renderer);
     }
 }
 
@@ -57,6 +59,7 @@ bool Renderer::init(int width, int height) {
     struct { Shader* s; const char* vs; const char* fs; } shaders[] = {
         {&shPBR_, "pbr.vert", "pbr.frag"},
         {&shShadow_, "shadow.vert", "shadow.frag"},
+        {&shPointDepth_, "pointdepth.vert", "pointdepth.frag"},
         {&shSkyCapture_, "fullscreen.vert", "sky_capture.frag"},
         {&shBackground_, "background.vert", "background.frag"},
         {&shIrradiance_, "fullscreen.vert", "ibl_irradiance.frag"},
@@ -108,6 +111,33 @@ bool Renderer::init(int width, int height) {
     }
     shadowFBO_ = rhi::createFramebuffer();
     rhi::setDrawBufferCount(shadowFBO_, 0); // depth-only
+
+    // ---- spot-light shadow maps (perspective depth, one layer per caster) ----
+    spotShadowTex_ = rhi::createTexture2DArray(kSpotShadowRes, kSpotShadowRes, kMaxSpotShadows,
+                                               rhi::TexFormat::Depth32F);
+    {
+        rhi::SamplerDesc smp;
+        smp.mipmaps = false;
+        smp.clampToBorder = true; // border = 1.0 -> lit outside the map
+        smp.shadowCompare = true;
+        rhi::setSampler(spotShadowTex_, smp);
+    }
+    spotShadowFBO_ = rhi::createFramebuffer();
+    rhi::setDrawBufferCount(spotShadowFBO_, 0); // depth-only
+    for (int i = 0; i < kMaxLights; ++i) lightSpotLayer_[i] = -1;
+
+    // ---- point-light shadow cubes (linear distance in R, one per caster) ----
+    for (int i = 0; i < kMaxPointShadows; ++i) {
+        pointCube_[i] = rhi::createTextureCube(kPointShadowRes, 1, rhi::TexFormat::RG16F);
+        rhi::SamplerDesc smp;
+        smp.mipmaps = false;
+        smp.linear = true;
+        rhi::setSampler(pointCube_[i], smp);
+    }
+    pointDepthTex_ = rhi::createTexture2D(kPointShadowRes, kPointShadowRes, 1,
+                                          rhi::TexFormat::Depth32F);
+    pointShadowFBO_ = rhi::createFramebuffer();
+    for (int i = 0; i < kMaxLights; ++i) lightPointCube_[i] = -1;
 
     // ---- SSAO kernel + noise ----
     std::mt19937 rng(1337);
@@ -263,6 +293,7 @@ void Renderer::createEnvironmentResources() {
     // Joint palette UBO for GPU skinning (binding point 0, shared by shaders).
     jointUBO_ = rhi::createUniformBuffer(128 * sizeof(Mat4));
     rhi::bindUniformBuffer(0, jointUBO_);
+    tonemapUBO_ = rhi::createUniformBuffer(16); // std140: 3 floats padded to 16
 }
 
 void Renderer::updateEnvironment(const Vec3& sunDir, float intensity) {
@@ -412,67 +443,187 @@ void Renderer::shadowPass(const RenderScene& scene, const Camera& camera) {
         rhi::attachDepthLayer(shadowFBO_, shadowTex_, 0, c);
         rhi::clear(false, 0, 0, 0, 0, /*depth=*/true);
         shShadow_.setMat4("uLightMat", cascadeMats_[c]);
-        // Instanced: rigid casters grouped by mesh (material is irrelevant to
-        // depth). Skinned casters keep the single-draw path (unique palettes).
-        if (settings.instancing) {
-            struct SBatch { std::vector<const Renderable*> items; };
-            std::vector<SBatch> sbatches;
-            for (const auto& e : scene.entities) {
-                if (!e.castShadow || !e.mesh || e.jointMatrices) continue;
-                if (isBlended(e.material)) continue;
-                if (e.maxDistance > 0.0f) {
-                    Vec3 d = Vec3(e.transform.m[3][0], e.transform.m[3][1],
-                                  e.transform.m[3][2]) - camera.position;
-                    if (dot(d, d) > e.maxDistance * e.maxDistance) continue;
-                }
-                bool merged = false;
-                for (auto& b : sbatches)
-                    if (b.items[0]->mesh == e.mesh) { b.items.push_back(&e); merged = true; break; }
-                if (!merged) sbatches.push_back({{&e}});
+        drawDepthCasters(scene, camera, shShadow_);
+    }
+}
+
+// Depth/distance render of the scene's shadow casters using `prog` + its
+// uLightMat. Shared by the cascade, spot, and point-shadow passes.
+void Renderer::drawDepthCasters(const RenderScene& scene, const Camera& camera, Shader& prog) {
+    // Instanced: rigid casters grouped by mesh (material is irrelevant to
+    // depth). Skinned casters keep the single-draw path (unique palettes).
+    if (settings.instancing) {
+        struct SBatch { std::vector<const Renderable*> items; };
+        std::vector<SBatch> sbatches;
+        for (const auto& e : scene.entities) {
+            if (!e.castShadow || !e.mesh || e.jointMatrices) continue;
+            if (isBlended(e.material)) continue;
+            if (e.maxDistance > 0.0f) {
+                Vec3 d = Vec3(e.transform.m[3][0], e.transform.m[3][1],
+                              e.transform.m[3][2]) - camera.position;
+                if (dot(d, d) > e.maxDistance * e.maxDistance) continue;
             }
-            shShadow_.setInt("uSkinned", 0);
-            for (const auto& b : sbatches) {
-                if (b.items.size() == 1) {
-                    shShadow_.setInt("uInstanced", 0);
-                    shShadow_.setMat4("uModel", b.items[0]->transform);
-                    b.items[0]->mesh->draw();
-                } else {
-                    shShadow_.setInt("uInstanced", 1);
-                    uploadInstanceMatrices(b.items);
-                    b.items[0]->mesh->drawInstanced((int)b.items.size());
-                }
-                ++stats.shadowDraws;
+            bool merged = false;
+            for (auto& b : sbatches)
+                if (b.items[0]->mesh == e.mesh) { b.items.push_back(&e); merged = true; break; }
+            if (!merged) sbatches.push_back({{&e}});
+        }
+        prog.setInt("uSkinned", 0);
+        for (const auto& b : sbatches) {
+            if (b.items.size() == 1) {
+                prog.setInt("uInstanced", 0);
+                prog.setMat4("uModel", b.items[0]->transform);
+                b.items[0]->mesh->draw();
+            } else {
+                prog.setInt("uInstanced", 1);
+                uploadInstanceMatrices(b.items);
+                b.items[0]->mesh->drawInstanced((int)b.items.size());
             }
-            for (const auto& e : scene.entities) { // skinned casters
-                if (!e.castShadow || !e.mesh || !e.jointMatrices) continue;
-                if (isBlended(e.material)) continue;
-                ++stats.shadowDraws;
-                shShadow_.setInt("uInstanced", 0);
-                shShadow_.setMat4("uModel", e.transform);
+            ++stats.shadowDraws;
+        }
+        for (const auto& e : scene.entities) { // skinned casters
+            if (!e.castShadow || !e.mesh || !e.jointMatrices) continue;
+            if (isBlended(e.material)) continue;
+            ++stats.shadowDraws;
+            prog.setInt("uInstanced", 0);
+            prog.setMat4("uModel", e.transform);
+            size_t n = e.jointMatrices->size() > 128 ? 128 : e.jointMatrices->size();
+            rhi::updateUniformBuffer(jointUBO_, e.jointMatrices->data(), n * sizeof(Mat4));
+            prog.setInt("uSkinned", 1);
+            e.mesh->draw();
+        }
+    } else {
+        for (const auto& e : scene.entities) {
+            if (!e.castShadow || !e.mesh) continue;
+            if (isBlended(e.material)) continue;
+            ++stats.shadowDraws;
+            prog.setInt("uInstanced", 0);
+            prog.setMat4("uModel", e.transform);
+            if (e.jointMatrices && !e.jointMatrices->empty()) {
                 size_t n = e.jointMatrices->size() > 128 ? 128 : e.jointMatrices->size();
-                rhi::updateUniformBuffer(jointUBO_, e.jointMatrices->data(), n * sizeof(Mat4));
-                shShadow_.setInt("uSkinned", 1);
-                e.mesh->draw();
+                rhi::updateUniformBuffer(jointUBO_, e.jointMatrices->data(),
+                                         n * sizeof(Mat4));
+                prog.setInt("uSkinned", 1);
+            } else {
+                prog.setInt("uSkinned", 0);
             }
-        } else {
-            for (const auto& e : scene.entities) {
-                if (!e.castShadow || !e.mesh) continue;
-                if (isBlended(e.material)) continue;
-                ++stats.shadowDraws;
-                shShadow_.setInt("uInstanced", 0);
-                shShadow_.setMat4("uModel", e.transform);
-                if (e.jointMatrices && !e.jointMatrices->empty()) {
-                    size_t n = e.jointMatrices->size() > 128 ? 128 : e.jointMatrices->size();
-                    rhi::updateUniformBuffer(jointUBO_, e.jointMatrices->data(),
-                                             n * sizeof(Mat4));
-                    shShadow_.setInt("uSkinned", 1);
-                } else {
-                    shShadow_.setInt("uSkinned", 0);
-                }
-                e.mesh->draw();
-            }
+            e.mesh->draw();
         }
     }
+}
+
+// Renders a perspective depth map for each of the nearest shadow-casting spot
+// lights (up to kMaxSpotShadows, gated by settings.spotShadows). lightSpotLayer_
+// maps each scene light index to its layer (-1 = none) for the PBR shader.
+void Renderer::spotShadowPass(const RenderScene& scene, const Camera& camera) {
+    spotShadowCount_ = 0;
+    for (int i = 0; i < kMaxLights; ++i) lightSpotLayer_[i] = -1;
+
+    int budget = settings.spotShadows < 0 ? 0
+                 : settings.spotShadows > kMaxSpotShadows ? kMaxSpotShadows
+                                                          : settings.spotShadows;
+    int nLights = (int)scene.lights.size();
+    if (nLights > kMaxLights) nLights = kMaxLights;
+    if (budget == 0 || nLights == 0) return;
+
+    // Pick the spot lights nearest the camera (most visually relevant).
+    struct Cand { int light; float dist2; };
+    std::vector<Cand> cands;
+    for (int i = 0; i < nLights; ++i) {
+        const Light& l = scene.lights[i];
+        if (l.type != 1) continue; // spot only (point shadows = cube map, later)
+        Vec3 d = l.position - camera.position;
+        cands.push_back({i, dot(d, d)});
+    }
+    std::sort(cands.begin(), cands.end(),
+              [](const Cand& a, const Cand& b) { return a.dist2 < b.dist2; });
+    if ((int)cands.size() > budget) cands.resize(budget);
+    if (cands.empty()) return;
+
+    // Unbind the spot array from its sampling unit (feedback hazard, as with 6).
+    rhi::bindTexture(10, rhi::TextureHandle{});
+    rhi::bindFramebuffer(spotShadowFBO_);
+    rhi::setViewport(0, 0, kSpotShadowRes, kSpotShadowRes);
+    shShadow_.use();
+
+    for (size_t k = 0; k < cands.size(); ++k) {
+        const Light& l = scene.lights[cands[k].light];
+        Vec3 dir = normalize(l.direction);
+        // FOV from the outer cone half-angle, with margin, capped shy of 180.
+        float cosOuter = clampf(l.cosOuter, 0.10f, 0.999f);
+        float fov = std::acos(cosOuter) * 2.0f * 1.10f;
+        fov = std::fmin(fov, radians(160.0f));
+        float far = std::fmax(l.range, 1.0f);
+        Vec3 up = std::fabs(dir.y) > 0.98f ? Vec3(1, 0, 0) : Vec3(0, 1, 0);
+        Mat4 view = lookAt(l.position, l.position + dir, up);
+        Mat4 proj = perspective(fov, 1.0f, 0.05f, far);
+        spotShadowMat_[k] = proj * view;
+        lightSpotLayer_[cands[k].light] = (int)k;
+
+        rhi::attachDepthLayer(spotShadowFBO_, spotShadowTex_, 0, (int)k);
+        rhi::clear(false, 0, 0, 0, 0, /*depth=*/true);
+        shShadow_.setMat4("uLightMat", spotShadowMat_[k]);
+        drawDepthCasters(scene, camera, shShadow_);
+    }
+    spotShadowCount_ = (int)cands.size();
+}
+
+// Renders a linear-distance cube for each of the nearest shadow-casting point
+// lights (up to kMaxPointShadows). lightPointCube_ maps each scene light index
+// to its cube (-1 = none) for the PBR shader.
+void Renderer::pointShadowPass(const RenderScene& scene, const Camera& camera) {
+    pointShadowCount_ = 0;
+    for (int i = 0; i < kMaxLights; ++i) lightPointCube_[i] = -1;
+
+    int budget = settings.pointShadows < 0 ? 0
+                 : settings.pointShadows > kMaxPointShadows ? kMaxPointShadows
+                                                            : settings.pointShadows;
+    int nLights = (int)scene.lights.size();
+    if (nLights > kMaxLights) nLights = kMaxLights;
+    if (budget == 0 || nLights == 0) return;
+
+    struct Cand { int light; float dist2; };
+    std::vector<Cand> cands;
+    for (int i = 0; i < nLights; ++i) {
+        if (scene.lights[i].type != 0) continue; // point only
+        Vec3 d = scene.lights[i].position - camera.position;
+        cands.push_back({i, dot(d, d)});
+    }
+    std::sort(cands.begin(), cands.end(),
+              [](const Cand& a, const Cand& b) { return a.dist2 < b.dist2; });
+    if ((int)cands.size() > budget) cands.resize(budget);
+    if (cands.empty()) return;
+
+    // The six cube-face view directions + up vectors (standard GL cube layout).
+    static const Vec3 faceDir[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
+                                    {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    static const Vec3 faceUp[6] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1},
+                                   {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
+
+    rhi::bindTexture(11, rhi::TextureHandle{}); // unbind: feedback hazard
+    rhi::bindTexture(12, rhi::TextureHandle{});
+    rhi::bindFramebuffer(pointShadowFBO_);
+    rhi::setViewport(0, 0, kPointShadowRes, kPointShadowRes);
+    rhi::attachDepth(pointShadowFBO_, pointDepthTex_);
+    rhi::setDrawBufferCount(pointShadowFBO_, 1);
+    shPointDepth_.use();
+
+    for (size_t k = 0; k < cands.size(); ++k) {
+        const Light& l = scene.lights[cands[k].light];
+        float far = std::fmax(l.range, 1.0f);
+        Mat4 proj = perspective(radians(90.0f), 1.0f, 0.05f, far);
+        shPointDepth_.setVec3("uLightPos", l.position);
+        shPointDepth_.setFloat("uFar", far);
+        for (int f = 0; f < 6; ++f) {
+            Mat4 view = lookAt(l.position, l.position + faceDir[f], faceUp[f]);
+            rhi::attachColorLayer(pointShadowFBO_, 0, pointCube_[k], 0, f);
+            rhi::clear(true, 1, 1, 1, 1, /*depth=*/true); // 1.0 = beyond range -> lit
+            shPointDepth_.setMat4("uLightMat", proj * view);
+            drawDepthCasters(scene, camera, shPointDepth_);
+        }
+        lightPointCube_[cands[k].light] = (int)k;
+    }
+    pointShadowCount_ = (int)cands.size();
 }
 
 // Gribb–Hartmann frustum plane extraction from a view-projection matrix
@@ -539,6 +690,9 @@ void Renderer::geometryPass(const RenderScene& scene, const Camera& camera) {
     rhi::bindTexture(5, brdfLUT_);
     rhi::bindTexture(6, shadowTex_);
     rhi::bindTexture(9, skinLUT_);
+    rhi::bindTexture(10, spotShadowTex_);  // local spot-light shadow maps
+    rhi::bindTexture(11, pointCube_[0]);   // local point-light shadow cubes
+    rhi::bindTexture(12, pointCube_[1]);
 
     // Visible set (frustum + draw-distance), then batch identical draws.
     std::vector<const Renderable*> visible;
@@ -622,7 +776,7 @@ void Renderer::submitInstanced(const std::vector<const Renderable*>& items, bool
     }
     if (m.graph && m.graph->valid)
         for (size_t t = 0; t < m.graph->textures.size(); ++t)
-            rhi::bindTexture(10 + (int)t, m.graph->textures[t].id());
+            rhi::bindTexture(13 + (int)t, m.graph->textures[t].id());
 
     sh.setVec4("uBaseColor", m.baseColor);
     sh.setFloat("uMetallic", m.metallic);
@@ -696,7 +850,12 @@ void Renderer::applyFrameUniforms(Shader& sh, const RenderScene& scene, const Ca
         // (type, range, cosInner, cosOuter) packed into one vec4.
         std::snprintf(name, sizeof(name), "uLightParams[%d]", i);
         sh.setVec4(name, Vec4((float)l.type, l.range, l.cosInner, l.cosOuter));
+        // .x = spot-shadow layer, .y = point-shadow cube (both -1 = none).
+        std::snprintf(name, sizeof(name), "uLightExtra[%d]", i);
+        sh.setVec4(name, Vec4((float)lightSpotLayer_[i], (float)lightPointCube_[i], 0, 0));
     }
+    if (spotShadowCount_ > 0)
+        sh.setMat4Array("uSpotShadowMat", spotShadowMat_, spotShadowCount_);
 
     sh.setMat4Array("uLightMat", cascadeMats_, kNumCascades);
     sh.setVec4("uCascadeSplits", Vec4(cascadeSplits_[0], cascadeSplits_[1], cascadeSplits_[2],
@@ -727,7 +886,7 @@ void Renderer::submitPBRDraw(const Renderable& e, bool& culling, const RenderSce
     }
     if (m.graph && m.graph->valid)
         for (size_t t = 0; t < m.graph->textures.size(); ++t)
-            rhi::bindTexture(10 + (int)t, m.graph->textures[t].id());
+            rhi::bindTexture(13 + (int)t, m.graph->textures[t].id());
 
     sh.setMat4("uModel", e.transform);
     sh.setVec4("uBaseColor", m.baseColor);
@@ -862,16 +1021,38 @@ void Renderer::particlePass(const RenderScene& scene, const Camera& camera) {
     Vec3 right(view.m[0][0], view.m[1][0], view.m[2][0]);
     Vec3 up(view.m[0][1], view.m[1][1], view.m[2][1]);
 
-    // Expand every particle into two triangles (pos3 uv2 color4).
+    // Expand every particle into two triangles (pos3 uv2 color4). Rotation
+    // rolls the billboard basis in the camera plane; flipbook batches remap
+    // the quad UVs to the particle's cell.
     struct V { float x, y, z, u, v, r, g, b, a; };
     static std::vector<V> verts; // scratch, reused across frames
     verts.clear();
     verts.reserve(total * 6);
+    int flipCols = 1, flipRows = 1;
     auto emit = [&](const ParticlePoint& p) {
-        Vec3 rx = right * (p.size * 0.5f);
-        Vec3 uy = up * (p.size * 0.5f);
+        Vec3 rx = right, uy = up;
+        if (p.rot != 0.0f) {
+            float cs = std::cos(p.rot), sn = std::sin(p.rot);
+            rx = right * cs + up * sn;
+            uy = up * cs - right * sn;
+        }
+        rx = rx * (p.size * 0.5f);
+        uy = uy * (p.size * 0.5f);
         Vec3 c[4] = {p.pos - rx - uy, p.pos + rx - uy, p.pos + rx + uy, p.pos - rx + uy};
         float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+        if (flipCols > 1 || flipRows > 1) {
+            int fi = (int)p.frame;
+            int frames = flipCols * flipRows;
+            fi = fi < 0 ? 0 : fi >= frames ? frames - 1 : fi;
+            float cw = 1.0f / flipCols, ch = 1.0f / flipRows;
+            float u0 = (fi % flipCols) * cw;
+            // Row 0 is the top of the image (decode order), which is v = 0.
+            float v0 = (fi / flipCols) * ch;
+            for (auto& t : uv) {
+                t[0] = u0 + t[0] * cw;
+                t[1] = v0 + (1.0f - t[1]) * ch;
+            }
+        }
         int idx[6] = {0, 1, 2, 0, 2, 3};
         for (int i = 0; i < 6; ++i) {
             const Vec3& pos = c[idx[i]];
@@ -882,10 +1063,17 @@ void Renderer::particlePass(const RenderScene& scene, const Camera& camera) {
 
     // Alpha batches draw farthest-first for correct compositing.
     Vec3 fwd = camera.forward();
-    struct Range { size_t first, count; bool additive; };
+    struct Range {
+        size_t first, count;
+        bool additive;
+        unsigned texture;
+        float softFade;
+    };
     std::vector<Range> ranges;
     for (const auto& b : scene.particles) {
         size_t first = verts.size();
+        flipCols = b.texture ? b.flipCols : 1;
+        flipRows = b.texture ? b.flipRows : 1;
         if (b.additive) {
             for (const auto& p : b.points) emit(p);
         } else {
@@ -899,20 +1087,28 @@ void Renderer::particlePass(const RenderScene& scene, const Camera& camera) {
                       });
             for (const auto* p : sorted) emit(*p);
         }
-        ranges.push_back({first, verts.size() - first, b.additive});
+        ranges.push_back({first, verts.size() - first, b.additive, b.texture, b.softFade});
     }
 
     size_t bytes = verts.size() * sizeof(V);
     rhi::setStreamData(particleStream_, verts.data(), bytes);
 
-    // Into the HDR buffer, tested against opaque depth, never writing it.
+    // Into the HDR buffer, tested against opaque depth, never writing it. The
+    // depth texture stays bound for soft fade — legal here because depth
+    // writes are off (same pattern as the composite pass).
     rhi::bindFramebuffer(hdrFBO_);
     rhi::setViewport(0, 0, width_, height_);
     rhi::setState({true, false, rhi::Blend::Premultiplied, false});
 
+    Mat4 proj = camera.proj((float)width_ / (float)height_);
     shParticle_.use();
     shParticle_.setMat4("uViewProj", viewProj);
+    rhi::bindTexture(1, gDepth_);
     for (const Range& r : ranges) {
+        if (r.texture) rhi::bindTexture(0, r.texture);
+        // x = textured, y = soft-fade distance, z/w = depth linearization.
+        shParticle_.setVec4("uParams", Vec4(r.texture ? 1.0f : 0.0f, r.softFade,
+                                            proj.m[2][2], proj.m[3][2]));
         // Premultiplied output: additive ONE/ONE, alpha ONE/ONE_MINUS_SRC_ALPHA.
         rhi::setBlend(r.additive ? rhi::Blend::Additive : rhi::Blend::Premultiplied);
         rhi::drawStream(particleStream_, rhi::Topology::Triangles, (int)r.first, (int)r.count);
@@ -984,9 +1180,10 @@ void Renderer::tonemapPass(float time) {
     rhi::bindFramebuffer(ldrFBO_);
     rhi::setViewport(0, 0, width_, height_);
     shTonemap_.use();
-    shTonemap_.setFloat("uExposure", settings.exposure);
-    shTonemap_.setFloat("uBloomStrength", settings.bloomStrength);
-    shTonemap_.setFloat("uTime", time);
+    struct { float exposure, bloomStrength, time, pad; } tm{settings.exposure,
+                                                             settings.bloomStrength, time, 0};
+    rhi::updateUniformBuffer(tonemapUBO_, &tm, sizeof(tm));
+    rhi::bindUniformBuffer(2, tonemapUBO_);
     rhi::bindTexture(0, hdrTex_);
     rhi::bindTexture(1, bloomTex_[0]);
     drawFullscreen();
@@ -1029,6 +1226,8 @@ void Renderer::render(const RenderScene& scene, const Camera& camera, float time
 
     beginPass(FrameStats::PassShadow);
     shadowPass(scene, camera);
+    spotShadowPass(scene, camera);
+    pointShadowPass(scene, camera);
     endPass();
     beginPass(FrameStats::PassGeom);
     geometryPass(scene, camera);
@@ -1060,11 +1259,14 @@ void Renderer::drawFullscreen() { rhi::drawFullscreen(); }
 
 void Renderer::shutdown() {
     destroyWindowTargets();
-    for (rhi::TextureHandle* t : {&shadowTex_, &ssaoNoiseTex_, &envCube_, &irradianceCube_,
+    for (rhi::TextureHandle* t : {&shadowTex_, &spotShadowTex_, &pointCube_[0], &pointCube_[1],
+                                  &pointDepthTex_, &ssaoNoiseTex_, &envCube_, &irradianceCube_,
                                   &prefilterCube_, &brdfLUT_, &skinLUT_})
         rhi::destroyTexture(*t);
     rhi::destroyBuffer(jointUBO_);
     rhi::destroyFramebuffer(shadowFBO_);
+    rhi::destroyFramebuffer(spotShadowFBO_);
+    rhi::destroyFramebuffer(pointShadowFBO_);
     rhi::destroyFramebuffer(captureFBO_);
     rhi::destroyStream(particleStream_);
     rhi::destroyStream(debugStream_);

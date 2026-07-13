@@ -33,7 +33,10 @@ MeshData makeTorus(float majorRadius, float minorRadius, int majorSegments, int 
 
 class Mesh {
 public:
-    void upload(const MeshData& data);
+    // `dynamic` marks the vertex buffer for streaming updates (morph targets).
+    void upload(const MeshData& data, bool dynamic = false);
+    // Re-uploads vertex data in place (same vertex count/layout as upload).
+    void updateVertices(const std::vector<Vertex>& vertices);
     void destroy();
     void draw() const;
     void drawInstanced(int instances) const;

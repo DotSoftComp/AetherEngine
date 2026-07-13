@@ -72,6 +72,7 @@ hints, not validation.
 |---|---|---|---|---|
 | `path` | string | `""` | Model |  |
 | `animate` | bool | `true` | Animate |  |
+| `clip` | int | `0` | Clip |  |
 
 ## Spin
 
@@ -261,6 +262,14 @@ hints, not validation.
 | `colorStart` | vec4 | `[4, 2.2, 0.6, 1]` | Color start (HDR) |  |
 | `colorEnd` | vec4 | `[0.8, 0.1, 0.05, 0]` | Color end (HDR) |  |
 | `additive` | bool | `true` | Additive |  |
+| `texture` | string | `""` | Texture (blank = disc) |  |
+| `flipbookCols` | int | `1` | Flipbook cols | 1 .. 64 |
+| `flipbookRows` | int | `1` | Flipbook rows | 1 .. 64 |
+| `flipbookFps` | float | `0` | Flipbook fps (0 = lifetime) | 0 .. 240 |
+| `spin` | float | `0` | Spin (deg/s) |  |
+| `spinJitter` | float | `0.5` | Spin jitter |  |
+| `randomRotation` | bool | `false` | Random rotation |  |
+| `softFade` | float | `0` | Soft fade (m) | 0 .. 10 |
 
 ## Animator
 
@@ -271,6 +280,23 @@ hints, not validation.
 | field | type | default | label | range |
 |---|---|---|---|---|
 | `graph` | string | `""` | Anim graph |  |
+| `rootMotion` | bool | `false` | Root motion |  |
+| `rootBone` | string | `""` | Root bone (blank = auto) |  |
+
+## TwoBoneIK
+
+- display name: Two-Bone IK  
+- category: Animation  
+- source: module: animation
+
+| field | type | default | label | range |
+|---|---|---|---|---|
+| `bone` | string | `""` | End bone |  |
+| `targetGuid` | entity guid | `""` | Target |  |
+| `targetName` | entity name (fallback) | `""` | Target |  |
+| `poleGuid` | entity guid | `""` | Pole (optional) |  |
+| `poleName` | entity name (fallback) | `""` | Pole (optional) |  |
+| `weight` | float | `1` | Weight |  |
 
 ## NavAgent
 

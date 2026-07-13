@@ -145,7 +145,7 @@ MeshData makeTorus(float R, float r, int majorSegs, int minorSegs) {
     return m;
 }
 
-void Mesh::upload(const MeshData& data) {
+void Mesh::upload(const MeshData& data, bool dynamic) {
     indexCount_ = (unsigned)data.indices.size();
 
     if (!data.vertices.empty()) {
@@ -177,7 +177,12 @@ void Mesh::upload(const MeshData& data) {
     desc.indexCount = data.indices.size();
     desc.attrs = attrs;
     desc.attrCount = 6;
+    desc.dynamic = dynamic;
     geom_ = rhi::createGeometry(desc);
+}
+
+void Mesh::updateVertices(const std::vector<Vertex>& vertices) {
+    rhi::updateGeometryVertices(geom_, vertices.data(), vertices.size() * sizeof(Vertex));
 }
 
 void Mesh::destroy() { rhi::destroyGeometry(geom_); }

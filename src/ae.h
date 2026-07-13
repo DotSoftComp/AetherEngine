@@ -27,7 +27,7 @@
 
 #include "core/math3d.h"
 #include "core/log.h"
-#include "core/window.h"
+#include "core/input.h" // Input (read via world().input()); no windowing in the SDK
 #include "engine/component.h"
 #include "engine/entity.h"
 #include "engine/world.h"

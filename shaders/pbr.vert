@@ -6,11 +6,7 @@ layout(location = 3) in vec2 aUV;
 layout(location = 4) in vec4 aJoints; // palette indices as float (cast below)
 layout(location = 5) in vec4 aWeights;
 
-uniform mat4 uModel;
-uniform mat4 uView;
-uniform mat4 uViewProj;
-uniform int uSkinned;
-uniform int uInstanced; // 1: model matrix comes from the instance buffer
+#include "pbr_uniforms.glsl"
 
 layout(std140, binding = 0) uniform JointPalette {
     mat4 uJoints[128];
@@ -43,7 +39,7 @@ void main() {
         localTan = mat3(skin) * localTan;
     }
 
-    mat4 model = uInstanced != 0 ? uInstanceModel[gl_InstanceID] : uModel;
+    mat4 model = uInstanced != 0 ? uInstanceModel[AE_IID] : uModel;
     vec4 world = model * localPos;
     mat3 normalMat = transpose(inverse(mat3(model)));
 

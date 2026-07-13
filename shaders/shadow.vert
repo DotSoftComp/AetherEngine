@@ -3,10 +3,12 @@ layout(location = 0) in vec3 aPosition;
 layout(location = 4) in vec4 aJoints; // palette indices as float (cast below)
 layout(location = 5) in vec4 aWeights;
 
-uniform mat4 uModel;
-uniform mat4 uLightMat;
-uniform int uSkinned;
-uniform int uInstanced;
+layout(std140, binding = 15) uniform U {
+    mat4 uModel;
+    mat4 uLightMat;
+    int uSkinned;
+    int uInstanced;
+};
 
 layout(std430, binding = 1) readonly buffer InstanceMatrices {
     mat4 uInstanceModel[];
@@ -25,6 +27,6 @@ void main() {
                     aWeights.w * uJoints[uint(aJoints.w + 0.5)];
         localPos = skin * localPos;
     }
-    mat4 model = uInstanced != 0 ? uInstanceModel[gl_InstanceID] : uModel;
+    mat4 model = uInstanced != 0 ? uInstanceModel[AE_IID] : uModel;
     gl_Position = uLightMat * model * localPos;
 }

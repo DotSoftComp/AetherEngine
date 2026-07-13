@@ -9,7 +9,7 @@
 #include "entity.h"
 #include "world.h"
 #include "reflect.h"
-#include "../core/window.h"
+#include "../core/input.h"
 #include <cmath>
 #include <string>
 

@@ -48,6 +48,23 @@ int compareEngineVersions(const std::string& a, const std::string& b) {
     return 0;
 }
 
+bool isCompatibleUpgrade(const std::string& pinned, const std::string& candidate) {
+    if (pinned.empty() || candidate.empty()) return false;
+    int majPinned = (int)strtol(pinned.c_str(), nullptr, 10);
+    int majCand = (int)strtol(candidate.c_str(), nullptr, 10);
+    if (majPinned != majCand) return false; // major bump = breaking, never auto-offered
+    return compareEngineVersions(candidate, pinned) > 0;
+}
+
+const EngineInstall* LauncherState::newestCompatibleEngine(const std::string& pinned) const {
+    const EngineInstall* best = nullptr;
+    for (const EngineInstall& e : engines) {
+        if (!isCompatibleUpgrade(pinned, e.version)) continue;
+        if (!best || compareEngineVersions(e.version, best->version) > 0) best = &e;
+    }
+    return best;
+}
+
 std::string LauncherState::stateFilePath() {
     char appData[MAX_PATH] = {};
     if (FAILED(SHGetFolderPathA(nullptr, CSIDL_APPDATA, nullptr, 0, appData))) return {};

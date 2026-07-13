@@ -2,15 +2,22 @@
 //
 // A MaterialGraph is a pure-dataflow node graph (JSON in assets/materials/)
 // whose Output node feeds the PBR inputs — BaseColor, Metallic, Roughness,
-// Emissive, Opacity, AO. The engine GENERATES GLSL from the graph and compiles
-// it as a variant of the standard pbr.frag (the MATERIAL_GRAPH block), so
-// graph materials get the full lighting pipeline — sun + local lights,
-// shadows, IBL, SSAO, fog, bloom — for free, in both the deferred and forward
-// (blended) passes.
+// Emissive, Opacity, AO, and a tangent-space Normal (feed it from a NormalMap
+// node for bumped graph materials). The engine GENERATES GLSL from the graph
+// and compiles it as a variant of the standard pbr.frag (the MATERIAL_GRAPH
+// block), so graph materials get the full lighting pipeline — sun + local
+// lights, shadows, IBL, SSAO, fog, bloom — for free, in both the deferred and
+// forward (blended) passes. Up to 8 distinct textures per graph.
 //
 // Node types are SELF-DESCRIBING: one registry entry each (pins, params, and a
 // GLSL-emitting lambda) drives the codegen AND the canvas editor
 // (editor/material_graph_panel). Adding a node = one small registration.
+//
+// SUBGRAPHS make graphs composable: a Subgraph node references another
+// assets/materials/*.json and inlines it at compile time. Inside the sub
+// file, SubInput nodes (pin index 0-3 = the caller's A-D inputs) are the
+// arguments and one SubOutput node is the return value — a reusable function
+// authored as a graph.
 //
 // Value types are Float / Vec2 / Vec3 with implicit conversions (splat, .x,
 // (xy,0)) so wiring "just works". Assign a graph to a MeshRenderer through the
@@ -102,9 +109,22 @@ struct MaterialGraphAsset {
     bool compile(const std::string& absPath);
 };
 
-// Generates just the GLSL block (exposed for the editor's "view code" and for
-// tests). Returns false when the graph has no Output node or a cycle.
-bool generateMaterialGLSL(const MaterialGraph& g, std::string& declsOut, std::string& codeOut,
-                          std::vector<std::pair<std::string, bool>>& texturesOut /*path,srgb*/);
+// ---- codegen output -------------------------------------------------------------
+struct MGGenerated {
+    std::string decls;      // file-scope declarations (samplers + helpers)
+    std::string code;       // main-body block filling the PBR inputs
+    std::string normalCode; // TBN application ("" = keep the geometric normal)
+    std::vector<std::pair<std::string, bool>> textures; // path, srgb
+};
+
+// Loads a subgraph referenced by a Subgraph node (project-relative path).
+// Return false when the file is missing/invalid.
+using MGSubLoader = std::function<bool(const std::string& path, MaterialGraph& out)>;
+
+// Generates the GLSL blocks (exposed for the editor's "view code" and for
+// tests). Returns false when the graph has no Output node. Without a loader,
+// Subgraph nodes emit magenta.
+bool generateMaterialGLSL(const MaterialGraph& g, MGGenerated& out,
+                          const MGSubLoader& loadSub = {});
 
 } // namespace ae
