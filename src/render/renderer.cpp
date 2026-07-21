@@ -68,6 +68,9 @@ bool Renderer::init(int width, int height) {
         {&shSkinLUT_, "fullscreen.vert", "skin_lut.frag"},
         {&shSSAO_, "fullscreen.vert", "ssao.frag"},
         {&shSSAOBlur_, "fullscreen.vert", "ssao_blur.frag"},
+        {&shVolumetric_, "fullscreen.vert", "volumetric.frag"},
+        {&shSSR_, "fullscreen.vert", "ssr.frag"},
+        {&shSSRResolve_, "fullscreen.vert", "ssr_resolve.frag"},
         {&shComposite_, "fullscreen.vert", "composite.frag"},
         {&shBloomDown_, "fullscreen.vert", "bloom_down.frag"},
         {&shBloomUp_, "fullscreen.vert", "bloom_up.frag"},
@@ -75,6 +78,9 @@ bool Renderer::init(int width, int height) {
         {&shFXAA_, "fullscreen.vert", "fxaa.frag"},
         {&shParticle_, "particle.vert", "particle.frag"},
         {&shDebug_, "debug.vert", "debug.frag"},
+        {&shLumDown_, "fullscreen.vert", "lum_down.frag"},
+        {&shLumAdapt_, "fullscreen.vert", "lum_adapt.frag"},
+        {&shTAA_, "fullscreen.vert", "taa.frag"},
     };
     for (auto& e : shaders)
         if (!e.s->load(e.vs, e.fs)) return false;
@@ -182,19 +188,36 @@ static rhi::TextureHandle makeColorTex(rhi::TexFormat format, int w, int h,
     return tex;
 }
 
+// Same as makeColorTex but with a mip chain, so a pass can sample a blurred
+// version of the frame (SSR uses it to widen a reflection with roughness).
+static rhi::TextureHandle makeColorTexMips(rhi::TexFormat format, int w, int h) {
+    int levels = 1;
+    for (int d = (w > h ? w : h); d > 1; d >>= 1) ++levels;
+    rhi::TextureHandle tex = rhi::createTexture2D(w, h, levels, format);
+    rhi::SamplerDesc smp;
+    smp.linear = true;
+    smp.mipmaps = true;
+    smp.repeat = false;
+    rhi::setSampler(tex, smp);
+    return tex;
+}
+
 void Renderer::createWindowTargets() {
     // Geometry MRT
     gDirect_ = makeColorTex(rhi::TexFormat::RGBA16F, width_, height_);
     gAmbient_ = makeColorTex(rhi::TexFormat::RGBA16F, width_, height_);
     gNormal_ = makeColorTex(rhi::TexFormat::RGBA16F, width_, height_, /*linear=*/false);
+    // Specular weight + roughness, for SSR. RGBA8 is plenty: both are 0..1.
+    gSpecular_ = makeColorTex(rhi::TexFormat::RGBA8, width_, height_, /*linear=*/false);
     gDepth_ = makeColorTex(rhi::TexFormat::Depth32F, width_, height_, /*linear=*/false);
 
     gFBO_ = rhi::createFramebuffer();
     rhi::attachColor(gFBO_, 0, gDirect_);
     rhi::attachColor(gFBO_, 1, gAmbient_);
     rhi::attachColor(gFBO_, 2, gNormal_);
+    rhi::attachColor(gFBO_, 3, gSpecular_);
     rhi::attachDepth(gFBO_, gDepth_);
-    rhi::setDrawBufferCount(gFBO_, 3);
+    rhi::setDrawBufferCount(gFBO_, 4);
     if (!rhi::framebufferComplete(gFBO_))
         std::fprintf(stderr, "[Renderer] geometry FBO incomplete\n");
 
@@ -209,8 +232,24 @@ void Renderer::createWindowTargets() {
     ssaoBlurFBO_ = rhi::createFramebuffer();
     rhi::attachColor(ssaoBlurFBO_, 0, ssaoBlurTex_);
 
+    // Volumetric in-scattering, also half res: the result is low-frequency, so
+    // a depth-aware upsample at composite time is indistinguishable from full
+    // rate at a quarter of the marching cost. RGB = scattered light,
+    // A = transmittance through the medium to the scene.
+    volumetricTex_ = makeColorTex(rhi::TexFormat::RGBA16F, aw, ah);
+    volumetricFBO_ = rhi::createFramebuffer();
+    rhi::attachColor(volumetricFBO_, 0, volumetricTex_);
+
+    // SSR marches at half res too; the resolve upsamples it bilinearly, which
+    // is fine because a reflection is already a blurred, low-contrast signal.
+    ssrTex_ = makeColorTex(rhi::TexFormat::RGBA16F, aw, ah);
+    ssrFBO_ = rhi::createFramebuffer();
+    rhi::attachColor(ssrFBO_, 0, ssrTex_);
+
     // HDR composite target
-    hdrTex_ = makeColorTex(rhi::TexFormat::RGBA16F, width_, height_);
+    // Mipped: SSR samples a coarser level for rougher surfaces, which stands in
+    // for a proper cone trace at a fraction of the cost.
+    hdrTex_ = makeColorTexMips(rhi::TexFormat::RGBA16F, width_, height_);
     hdrFBO_ = rhi::createFramebuffer();
     rhi::attachColor(hdrFBO_, 0, hdrTex_);
     // The opaque depth buffer rides along so the forward (transparent) pass can
@@ -233,17 +272,59 @@ void Renderer::createWindowTargets() {
     ldrTex_ = makeColorTex(rhi::TexFormat::RGBA8, width_, height_);
     ldrFBO_ = rhi::createFramebuffer();
     rhi::attachColor(ldrFBO_, 0, ldrTex_);
+
+    // TAA resolve + history (full res, HDR).
+    taaTex_ = makeColorTex(rhi::TexFormat::RGBA16F, width_, height_);
+    taaFBO_ = rhi::createFramebuffer();
+    rhi::attachColor(taaFBO_, 0, taaTex_);
+    historyTex_ = makeColorTex(rhi::TexFormat::RGBA16F, width_, height_);
+    historyFBO_ = rhi::createFramebuffer();
+    rhi::attachColor(historyFBO_, 0, historyTex_);
+    taaReset_ = true; // no usable history for the new size
+
+    // Auto-exposure reduction pyramid: start at 1/4 res and halve to 1x1.
+    int lw = width_ / 4 < 1 ? 1 : width_ / 4;
+    int lh = height_ / 4 < 1 ? 1 : height_ / 4;
+    lumMipCount_ = 0;
+    for (int i = 0; i < kLumMips; ++i) {
+        lumW_[i] = lw;
+        lumH_[i] = lh;
+        lumTex_[i] = makeColorTex(rhi::TexFormat::R16F, lw, lh);
+        lumFBO_[i] = rhi::createFramebuffer();
+        rhi::attachColor(lumFBO_[i], 0, lumTex_[i]);
+        ++lumMipCount_;
+        if (lw == 1 && lh == 1) break;
+        lw = lw > 1 ? lw / 2 : 1;
+        lh = lh > 1 ? lh / 2 : 1;
+    }
+    for (int i = 0; i < 2; ++i) {
+        adaptTex_[i] = makeColorTex(rhi::TexFormat::R16F, 1, 1);
+        adaptFBO_[i] = rhi::createFramebuffer();
+        rhi::attachColor(adaptFBO_[i], 0, adaptTex_[i]);
+    }
+    exposureReset_ = true;
 }
 
 void Renderer::destroyWindowTargets() {
     for (rhi::TextureHandle* t : {&gDirect_, &gAmbient_, &gNormal_, &gDepth_, &ssaoTex_,
-                                  &ssaoBlurTex_, &hdrTex_, &ldrTex_})
+                                  &ssaoBlurTex_, &volumetricTex_, &gSpecular_, &ssrTex_,
+                                  &hdrTex_, &ldrTex_, &taaTex_, &historyTex_})
         rhi::destroyTexture(*t);
-    for (rhi::FramebufferHandle* f : {&gFBO_, &ssaoFBO_, &ssaoBlurFBO_, &hdrFBO_, &ldrFBO_})
+    for (rhi::FramebufferHandle* f : {&gFBO_, &ssaoFBO_, &ssaoBlurFBO_, &volumetricFBO_,
+                                      &ssrFBO_, &hdrFBO_, &ldrFBO_, &taaFBO_, &historyFBO_})
         rhi::destroyFramebuffer(*f);
     for (int i = 0; i < kBloomMips; ++i) {
         rhi::destroyTexture(bloomTex_[i]);
         rhi::destroyFramebuffer(bloomFBO_[i]);
+    }
+    for (int i = 0; i < lumMipCount_; ++i) {
+        rhi::destroyTexture(lumTex_[i]);
+        rhi::destroyFramebuffer(lumFBO_[i]);
+    }
+    lumMipCount_ = 0;
+    for (int i = 0; i < 2; ++i) {
+        rhi::destroyTexture(adaptTex_[i]);
+        rhi::destroyFramebuffer(adaptFBO_[i]);
     }
 }
 
@@ -512,6 +593,37 @@ void Renderer::drawDepthCasters(const RenderScene& scene, const Camera& camera, 
     }
 }
 
+// Picks which local lights get shaded this frame.
+//
+// The PBR shader takes a fixed 8 lights, but a real level has dozens — a lamp
+// in every room, a torch in every alcove. Taking the first 8 in scene order
+// would light whichever entities happen to be authored first and leave the
+// room you are standing in dark. So: drop lights whose sphere of influence
+// can't reach the camera at all, then keep the 8 whose influence reaches
+// nearest. Walking down a corridor hands the budget from lamp to lamp.
+void Renderer::selectLights(const RenderScene& scene, const Camera& camera) {
+    activeLights_.clear();
+    struct Cand { int index; float score; };
+    std::vector<Cand> cands;
+    cands.reserve(scene.lights.size());
+    for (size_t i = 0; i < scene.lights.size(); ++i) {
+        const Light& l = scene.lights[i];
+        // Distance from the camera to the light's influence sphere: <= 0 means
+        // the camera is inside it (always relevant), large means far outside.
+        float d = length(l.position - camera.position) - std::fmax(l.range, 0.0f);
+        if (d > 0.0f && l.type != 2) {
+            // A light whose reach ends well before the near geometry cannot
+            // affect anything on screen; skip it rather than spend a slot.
+            if (d > l.range * 2.0f + 8.0f) continue;
+        }
+        cands.push_back({(int)i, d});
+    }
+    std::stable_sort(cands.begin(), cands.end(),
+                     [](const Cand& a, const Cand& b) { return a.score < b.score; });
+    if ((int)cands.size() > kMaxLights) cands.resize(kMaxLights);
+    for (const Cand& c : cands) activeLights_.push_back(scene.lights[c.index]);
+}
+
 // Renders a perspective depth map for each of the nearest shadow-casting spot
 // lights (up to kMaxSpotShadows, gated by settings.spotShadows). lightSpotLayer_
 // maps each scene light index to its layer (-1 = none) for the PBR shader.
@@ -522,15 +634,14 @@ void Renderer::spotShadowPass(const RenderScene& scene, const Camera& camera) {
     int budget = settings.spotShadows < 0 ? 0
                  : settings.spotShadows > kMaxSpotShadows ? kMaxSpotShadows
                                                           : settings.spotShadows;
-    int nLights = (int)scene.lights.size();
-    if (nLights > kMaxLights) nLights = kMaxLights;
+    int nLights = (int)activeLights_.size();
     if (budget == 0 || nLights == 0) return;
 
     // Pick the spot lights nearest the camera (most visually relevant).
     struct Cand { int light; float dist2; };
     std::vector<Cand> cands;
     for (int i = 0; i < nLights; ++i) {
-        const Light& l = scene.lights[i];
+        const Light& l = activeLights_[i];
         if (l.type != 1) continue; // spot only (point shadows = cube map, later)
         Vec3 d = l.position - camera.position;
         cands.push_back({i, dot(d, d)});
@@ -547,7 +658,7 @@ void Renderer::spotShadowPass(const RenderScene& scene, const Camera& camera) {
     shShadow_.use();
 
     for (size_t k = 0; k < cands.size(); ++k) {
-        const Light& l = scene.lights[cands[k].light];
+        const Light& l = activeLights_[cands[k].light];
         Vec3 dir = normalize(l.direction);
         // FOV from the outer cone half-angle, with margin, capped shy of 180.
         float cosOuter = clampf(l.cosOuter, 0.10f, 0.999f);
@@ -578,15 +689,14 @@ void Renderer::pointShadowPass(const RenderScene& scene, const Camera& camera) {
     int budget = settings.pointShadows < 0 ? 0
                  : settings.pointShadows > kMaxPointShadows ? kMaxPointShadows
                                                             : settings.pointShadows;
-    int nLights = (int)scene.lights.size();
-    if (nLights > kMaxLights) nLights = kMaxLights;
+    int nLights = (int)activeLights_.size();
     if (budget == 0 || nLights == 0) return;
 
     struct Cand { int light; float dist2; };
     std::vector<Cand> cands;
     for (int i = 0; i < nLights; ++i) {
-        if (scene.lights[i].type != 0) continue; // point only
-        Vec3 d = scene.lights[i].position - camera.position;
+        if (activeLights_[i].type != 0) continue; // point only
+        Vec3 d = activeLights_[i].position - camera.position;
         cands.push_back({i, dot(d, d)});
     }
     std::sort(cands.begin(), cands.end(),
@@ -609,7 +719,7 @@ void Renderer::pointShadowPass(const RenderScene& scene, const Camera& camera) {
     shPointDepth_.use();
 
     for (size_t k = 0; k < cands.size(); ++k) {
-        const Light& l = scene.lights[cands[k].light];
+        const Light& l = activeLights_[cands[k].light];
         float far = std::fmax(l.range, 1.0f);
         Mat4 proj = perspective(radians(90.0f), 1.0f, 0.05f, far);
         shPointDepth_.setVec3("uLightPos", l.position);
@@ -676,7 +786,7 @@ void Renderer::geometryPass(const RenderScene& scene, const Camera& camera) {
     rhi::clear(true, 0, 0, 0, 0, true);
 
     Mat4 view = camera.view();
-    Mat4 proj = camera.proj((float)width_ / (float)height_);
+    Mat4 proj = projFor(camera);
     Mat4 viewProj = proj * view;
 
     Vec4 frustum[6];
@@ -799,6 +909,7 @@ void Renderer::submitInstanced(const std::vector<const Renderable*>& items, bool
     if (m.mrTex)        { flags |= 4;  rhi::bindTexture(2, m.mrTex); }
     if (m.emissiveTex)  { flags |= 8;  rhi::bindTexture(8, m.emissiveTex); }
     if (m.occlusionTex) { flags |= 16; rhi::bindTexture(7, m.occlusionTex); }
+    if (m.worldUV)      { flags |= 32; } // UVs from world position (see pbr.frag)
     sh.setInt("uTexFlags", flags);
 
     if (m.doubleSided == culling) {
@@ -825,7 +936,7 @@ void Renderer::uploadInstanceMatrices(const std::vector<const Renderable*>& item
 
 void Renderer::applyFrameUniforms(Shader& sh, const RenderScene& scene, const Camera& camera) {
     Mat4 view = camera.view();
-    Mat4 viewProj = camera.proj((float)width_ / (float)height_) * view;
+    Mat4 viewProj = projFor(camera) * view;
     sh.setMat4("uView", view);
     sh.setMat4("uViewProj", viewProj);
     sh.setMat4("uViewForNormal", view);
@@ -835,11 +946,10 @@ void Renderer::applyFrameUniforms(Shader& sh, const RenderScene& scene, const Ca
     sh.setFloat("uPrefilterMips", (float)(kPrefilterMips - 1));
     sh.setFloat("uTime", frameTime_);
 
-    int numLights = (int)scene.lights.size();
-    if (numLights > 8) numLights = 8;
+    int numLights = (int)activeLights_.size();
     sh.setInt("uNumLights", numLights);
     for (int i = 0; i < numLights; ++i) {
-        const Light& l = scene.lights[i];
+        const Light& l = activeLights_[i];
         char name[32];
         std::snprintf(name, sizeof(name), "uLightPos[%d]", i);
         sh.setVec3(name, l.position);
@@ -865,9 +975,9 @@ void Renderer::applyFrameUniforms(Shader& sh, const RenderScene& scene, const Ca
 
     // Forward-pass extras (harmless defaults in the geometry pass).
     sh.setInt("uForwardPass", frameForward_ ? 1 : 0);
-    sh.setVec3("uFogColor", fogColor_);
-    sh.setFloat("uFogDensity", settings.fogDensity);
-    sh.setFloat("uFogHeightFalloff", settings.fogHeightFalloff);
+    sh.setVec3("uFogColor", sceneFogColor_);
+    sh.setFloat("uFogDensity", sceneFogDensity_);
+    sh.setFloat("uFogHeightFalloff", sceneFogFalloff_);
 }
 
 void Renderer::submitPBRDraw(const Renderable& e, bool& culling, const RenderScene& scene,
@@ -917,6 +1027,7 @@ void Renderer::submitPBRDraw(const Renderable& e, bool& culling, const RenderSce
     if (m.mrTex)        { flags |= 4;  rhi::bindTexture(2, m.mrTex); }
     if (m.emissiveTex)  { flags |= 8;  rhi::bindTexture(8, m.emissiveTex); }
     if (m.occlusionTex) { flags |= 16; rhi::bindTexture(7, m.occlusionTex); }
+    if (m.worldUV)      { flags |= 32; } // UVs from world position (see pbr.frag)
     sh.setInt("uTexFlags", flags);
 
     if (m.doubleSided == culling) {
@@ -927,7 +1038,7 @@ void Renderer::submitPBRDraw(const Renderable& e, bool& culling, const RenderSce
 }
 
 void Renderer::ssaoPass(const Camera& camera) {
-    Mat4 proj = camera.proj((float)width_ / (float)height_);
+    Mat4 proj = projFor(camera);
     int aw = width_ / 2 < 1 ? 1 : width_ / 2;
     int ah = height_ / 2 < 1 ? 1 : height_ / 2;
 
@@ -953,8 +1064,103 @@ void Renderer::ssaoPass(const Camera& camera) {
     rhi::setState({});
 }
 
+void Renderer::volumetricPass(const RenderScene& scene, const Camera& camera) {
+    int aw = width_ / 2 < 1 ? 1 : width_ / 2;
+    int ah = height_ / 2 < 1 ? 1 : height_ / 2;
+    Mat4 viewProj = projFor(camera) * camera.view();
+
+    rhi::setState({false, true, rhi::Blend::Off, true});
+    rhi::bindFramebuffer(volumetricFBO_);
+    rhi::setViewport(0, 0, aw, ah);
+    shVolumetric_.use();
+    shVolumetric_.setMat4("uInvViewProj", inverse(viewProj));
+    shVolumetric_.setMat4("uView", camera.view());
+    shVolumetric_.setMat4Array("uLightMat", cascadeMats_, kNumCascades);
+    shVolumetric_.setVec4("uCascadeSplits",
+                          Vec4(cascadeSplits_[0], cascadeSplits_[1], cascadeSplits_[2],
+                               cascadeSplits_[3]));
+    shVolumetric_.setVec3("uCamPos", camera.position);
+    shVolumetric_.setVec3("uSunDir", scene.sunDir);
+    shVolumetric_.setVec3("uSunRadiance", sunRadiance_);
+    shVolumetric_.setVec3("uFogColor", sceneFogColor_);
+    shVolumetric_.setFloat("uFogDensity", sceneFogDensity_);
+    shVolumetric_.setFloat("uFogHeightFalloff", sceneFogFalloff_);
+    shVolumetric_.setFloat("uAnisotropy", settings.volumetricAnisotropy);
+    shVolumetric_.setFloat("uIntensity", sceneVolumetric_);
+    shVolumetric_.setFloat("uMaxDistance", settings.volumetricMaxDistance);
+    shVolumetric_.setInt("uSteps", settings.volumetricSteps);
+    shVolumetric_.setFloat("uTime", frameTime_);
+
+    int numLights = (int)activeLights_.size();
+    shVolumetric_.setInt("uNumLights", numLights);
+    for (int i = 0; i < numLights; ++i) {
+        const Light& l = activeLights_[i];
+        char n[32];
+        std::snprintf(n, sizeof(n), "uLightPos[%d]", i);
+        shVolumetric_.setVec3(n, l.position);
+        std::snprintf(n, sizeof(n), "uLightColor[%d]", i);
+        shVolumetric_.setVec3(n, l.color);
+        std::snprintf(n, sizeof(n), "uLightDir[%d]", i);
+        shVolumetric_.setVec3(n, l.direction);
+        std::snprintf(n, sizeof(n), "uLightParams[%d]", i);
+        shVolumetric_.setVec4(n, Vec4((float)l.type, l.range, l.cosInner, l.cosOuter));
+    }
+
+    rhi::bindTexture(0, gDepth_);
+    rhi::bindTexture(6, shadowTex_);
+    drawFullscreen();
+    rhi::setState({});
+}
+
+void Renderer::ssrPass(const Camera& camera) {
+    int aw = width_ / 2 < 1 ? 1 : width_ / 2;
+    int ah = height_ / 2 < 1 ? 1 : height_ / 2;
+    Mat4 proj = projFor(camera);
+    Mat4 view = camera.view();
+
+    // The march samples the composited frame, so its mip chain has to be built
+    // first. Level 0 is untouched by this — only the coarser levels are filled.
+    rhi::generateMips(hdrTex_);
+
+    rhi::setState({false, true, rhi::Blend::Off, true});
+    rhi::bindFramebuffer(ssrFBO_);
+    rhi::setViewport(0, 0, aw, ah);
+    shSSR_.use();
+    shSSR_.setMat4("uProj", proj);
+    shSSR_.setMat4("uInvProj", inverse(proj));
+    shSSR_.setFloat("uMaxRoughness", settings.ssrMaxRoughness);
+    shSSR_.setFloat("uThickness", settings.ssrThickness);
+    shSSR_.setFloat("uMaxDistance", settings.ssrMaxDistance);
+    shSSR_.setInt("uSteps", settings.ssrSteps);
+    shSSR_.setInt("uRefineSteps", settings.ssrRefineSteps);
+    shSSR_.setFloat("uTime", frameTime_);
+    rhi::bindTexture(0, gDepth_);
+    rhi::bindTexture(1, gNormal_);
+    rhi::bindTexture(2, hdrTex_);
+    rhi::bindTexture(3, gSpecular_);
+    drawFullscreen();
+
+    // Resolve additively into the frame: the shader emits only the DIFFERENCE
+    // between the traced reflection and the probe already in there.
+    rhi::bindFramebuffer(hdrFBO_);
+    rhi::setViewport(0, 0, width_, height_);
+    rhi::setState({false, false, rhi::Blend::Additive, true});
+    shSSRResolve_.use();
+    shSSRResolve_.setMat4("uInvProj", inverse(proj));
+    shSSRResolve_.setMat4("uInvView", inverse(view));
+    shSSRResolve_.setFloat("uPrefilterMips", (float)(kPrefilterMips - 1));
+    shSSRResolve_.setFloat("uStrength", settings.ssrStrength);
+    rhi::bindTexture(0, ssrTex_);
+    rhi::bindTexture(1, gSpecular_);
+    rhi::bindTexture(2, gNormal_);
+    rhi::bindTexture(3, gDepth_);
+    rhi::bindTexture(4, prefilterCube_);
+    drawFullscreen();
+    rhi::setState({});
+}
+
 void Renderer::compositePass(const RenderScene& scene, const Camera& camera) {
-    Mat4 viewProj = camera.proj((float)width_ / (float)height_) * camera.view();
+    Mat4 viewProj = projFor(camera) * camera.view();
 
     rhi::setState({false, true, rhi::Blend::Off, true});
     rhi::bindFramebuffer(hdrFBO_);
@@ -963,13 +1169,16 @@ void Renderer::compositePass(const RenderScene& scene, const Camera& camera) {
     shComposite_.setMat4("uInvViewProj", inverse(viewProj));
     shComposite_.setVec3("uCamPos", camera.position);
     shComposite_.setVec3("uSunDir", scene.sunDir);
-    shComposite_.setVec3("uFogColor", fogColor_);
-    shComposite_.setFloat("uFogDensity", settings.fogDensity);
-    shComposite_.setFloat("uFogHeightFalloff", settings.fogHeightFalloff);
+    shComposite_.setVec3("uFogColor", sceneFogColor_);
+    shComposite_.setFloat("uFogDensity", sceneFogDensity_);
+    shComposite_.setFloat("uFogHeightFalloff", sceneFogFalloff_);
+    bool useVolumetric = settings.volumetric && sceneVolumetric_ > 0.0f;
+    shComposite_.setInt("uVolumetric", useVolumetric ? 1 : 0);
     rhi::bindTexture(0, gDirect_);
     rhi::bindTexture(1, gAmbient_);
     rhi::bindTexture(2, ssaoBlurTex_);
     rhi::bindTexture(3, gDepth_);
+    rhi::bindTexture(4, volumetricTex_);
     drawFullscreen();
     rhi::setState({});
 }
@@ -1016,7 +1225,7 @@ void Renderer::particlePass(const RenderScene& scene, const Camera& camera) {
     if (total == 0) return;
 
     Mat4 view = camera.view();
-    Mat4 viewProj = camera.proj((float)width_ / (float)height_) * view;
+    Mat4 viewProj = projFor(camera) * view;
     // Camera basis in world space (rows of the view rotation).
     Vec3 right(view.m[0][0], view.m[1][0], view.m[2][0]);
     Vec3 up(view.m[0][1], view.m[1][1], view.m[2][1]);
@@ -1100,7 +1309,7 @@ void Renderer::particlePass(const RenderScene& scene, const Camera& camera) {
     rhi::setViewport(0, 0, width_, height_);
     rhi::setState({true, false, rhi::Blend::Premultiplied, false});
 
-    Mat4 proj = camera.proj((float)width_ / (float)height_);
+    Mat4 proj = projFor(camera);
     shParticle_.use();
     shParticle_.setMat4("uViewProj", viewProj);
     rhi::bindTexture(1, gDepth_);
@@ -1139,10 +1348,116 @@ void Renderer::debugPass(const Camera& camera) {
     rhi::setState({false, false, rhi::Blend::Alpha, true});
     shDebug_.use();
     shDebug_.setMat4("uViewProj",
-                     camera.proj((float)width_ / (float)height_) * camera.view());
+                     projFor(camera) * camera.view());
     rhi::drawStream(debugStream_, rhi::Topology::Lines, 0, (int)verts.size());
     rhi::setState({});
     dd.clear();
+}
+
+// Halton(2,3) low-discrepancy sequence — spreads the jitter evenly inside the
+// pixel instead of clustering like random offsets would.
+static float halton(int index, int base) {
+    float f = 1.0f, r = 0.0f;
+    for (int i = index; i > 0; i /= base) {
+        f /= base;
+        r += f * (i % base);
+    }
+    return r;
+}
+
+Vec2 Renderer::jitterNDC() const {
+    if (!settings.taa || width_ <= 0 || height_ <= 0) return Vec2(0.0f, 0.0f);
+    int i = (int)(frameIndex_ % 8) + 1; // 8-frame cycle
+    // [0,1) -> [-0.5,0.5) pixel, then to NDC (which spans 2 over the viewport).
+    float jx = (halton(i, 2) - 0.5f) * 2.0f / (float)width_;
+    float jy = (halton(i, 3) - 0.5f) * 2.0f / (float)height_;
+    return Vec2(jx, jy);
+}
+
+Mat4 Renderer::projFor(const Camera& camera) const {
+    Mat4 p = camera.proj((float)width_ / (float)height_);
+    Vec2 j = jitterNDC();
+    // Post-multiplying the clip-space x/y translation == shifting the whole
+    // frustum sub-pixel, which is what makes each frame sample a new point.
+    p.m[2][0] += j.x;
+    p.m[2][1] += j.y;
+    return p;
+}
+
+void Renderer::autoExposurePass(float dt) {
+    if (!settings.autoExposure || lumMipCount_ == 0) return;
+    rhi::setState({false, true, rhi::Blend::Off, true});
+
+    // Reduce the HDR frame to 1x1 log-average luminance.
+    shLumDown_.use();
+    rhi::TextureHandle src = hdrSource_;
+    for (int i = 0; i < lumMipCount_; ++i) {
+        rhi::bindFramebuffer(lumFBO_[i]);
+        rhi::setViewport(0, 0, lumW_[i], lumH_[i]);
+        shLumDown_.setInt("uFirstPass", i == 0 ? 1 : 0);
+        rhi::bindTexture(0, src);
+        drawFullscreen();
+        src = lumTex_[i];
+    }
+
+    // Adapt toward it, ping-ponging so this frame reads last frame's value.
+    int prev = adaptCur_;
+    adaptCur_ ^= 1;
+    rhi::bindFramebuffer(adaptFBO_[adaptCur_]);
+    rhi::setViewport(0, 0, 1, 1);
+    shLumAdapt_.use();
+    shLumAdapt_.setFloat("uDeltaTime", dt);
+    shLumAdapt_.setFloat("uSpeedUp", settings.autoExposureSpeedUp);
+    shLumAdapt_.setFloat("uSpeedDown", settings.autoExposureSpeedDown);
+    shLumAdapt_.setFloat("uReset", exposureReset_ ? 1.0f : 0.0f);
+    rhi::bindTexture(0, lumTex_[lumMipCount_ - 1]);
+    rhi::bindTexture(1, adaptTex_[prev]);
+    drawFullscreen();
+    exposureReset_ = false;
+    rhi::setState({});
+}
+
+void Renderer::taaPass(const Camera& camera) {
+    // Reprojection deliberately uses the UNJITTERED projection. With the
+    // jittered one, a static pixel maps a sub-pixel away from itself every
+    // frame, so the history gets bilinearly resampled over and over and the
+    // image melts into blur. Unjittered, static content maps exactly 1:1 —
+    // history is a clean texel fetch, and the jitter enters only through the
+    // current frame, which is what makes the accumulation converge to a
+    // supersampled result instead of a smeared one.
+    Mat4 viewProj = camera.proj((float)width_ / (float)height_) * camera.view();
+    if (!settings.taa) {
+        prevViewProj_ = viewProj;
+        taaReset_ = true; // any history is stale if TAA is toggled back on
+        return;
+    }
+    rhi::setState({false, true, rhi::Blend::Off, true});
+
+    // Resolve current + history -> taaTex_.
+    rhi::bindFramebuffer(taaFBO_);
+    rhi::setViewport(0, 0, width_, height_);
+    shTAA_.use();
+    shTAA_.setMat4("uInvViewProj", inverse(viewProj));
+    shTAA_.setMat4("uPrevViewProj", prevViewProj_);
+    shTAA_.setVec2("uTexel", 1.0f / (float)width_, 1.0f / (float)height_);
+    shTAA_.setFloat("uBlend", 0.9f);
+    shTAA_.setFloat("uReset", taaReset_ ? 1.0f : 0.0f);
+    rhi::bindTexture(0, hdrTex_);
+    rhi::bindTexture(1, historyTex_);
+    rhi::bindTexture(2, gDepth_);
+    drawFullscreen();
+
+    // The rest of the chain reads the resolved image; it also becomes next
+    // frame's history. Swapping the two targets does both with no copy: the
+    // texture just written becomes `historyTex_`, and the stale one is recycled
+    // as the next resolve target.
+    hdrSource_ = taaTex_;
+    std::swap(taaTex_, historyTex_);
+    std::swap(taaFBO_, historyFBO_);
+
+    prevViewProj_ = viewProj;
+    taaReset_ = false;
+    rhi::setState({});
 }
 
 void Renderer::bloomPass() {
@@ -1152,7 +1467,7 @@ void Renderer::bloomPass() {
     shBloomDown_.use();
     shBloomDown_.setFloat("uThreshold", 1.0f);
     shBloomDown_.setFloat("uKnee", 0.5f);
-    rhi::TextureHandle src = hdrTex_;
+    rhi::TextureHandle src = hdrSource_;
     for (int i = 0; i < kBloomMips; ++i) {
         rhi::bindFramebuffer(bloomFBO_[i]);
         rhi::setViewport(0, 0, bloomW_[i], bloomH_[i]);
@@ -1180,12 +1495,14 @@ void Renderer::tonemapPass(float time) {
     rhi::bindFramebuffer(ldrFBO_);
     rhi::setViewport(0, 0, width_, height_);
     shTonemap_.use();
-    struct { float exposure, bloomStrength, time, pad; } tm{settings.exposure,
-                                                             settings.bloomStrength, time, 0};
+    bool autoExp = settings.autoExposure && lumMipCount_ > 0;
+    struct { float exposure, bloomStrength, time, autoExposure; } tm{
+        settings.exposure, settings.bloomStrength, time, autoExp ? 1.0f : 0.0f};
     rhi::updateUniformBuffer(tonemapUBO_, &tm, sizeof(tm));
     rhi::bindUniformBuffer(2, tonemapUBO_);
-    rhi::bindTexture(0, hdrTex_);
+    rhi::bindTexture(0, hdrSource_);
     rhi::bindTexture(1, bloomTex_[0]);
+    rhi::bindTexture(2, adaptTex_[adaptCur_]);
     drawFullscreen();
     rhi::setState({});
 }
@@ -1206,6 +1523,13 @@ void Renderer::render(const RenderScene& scene, const Camera& camera, float time
     stats = FrameStats{};
     stats.lights = (int)scene.lights.size();
     frameTime_ = time;
+    // Exposure adaptation needs a delta; render() only gets absolute time, and
+    // deriving it here keeps the signature every host already calls.
+    float dt = prevTime_ > 0.0f ? time - prevTime_ : 0.0f;
+    if (dt < 0.0f || dt > 0.5f) dt = 0.0f; // first frame / scrub / pause
+    prevTime_ = time;
+    ++frameIndex_;
+    hdrSource_ = hdrTex_; // TAA overrides this with its resolve
 
     // Per-pass GPU times: read last frame's timer queries (they are complete
     // by now in steady state), then record this frame with the other set.
@@ -1224,6 +1548,19 @@ void Renderer::render(const RenderScene& scene, const Camera& camera, float time
         updateEnvironment(scene.sunDir, scene.skyIntensity);
     endPass();
 
+    // Resolve this frame's atmosphere: the scene wins where it says anything,
+    // otherwise the renderer's own defaults (and its sky-derived fog color).
+    sceneFogDensity_ = scene.fogDensity >= 0.0f ? scene.fogDensity : settings.fogDensity;
+    sceneFogFalloff_ =
+        scene.fogHeightFalloff >= 0.0f ? scene.fogHeightFalloff : settings.fogHeightFalloff;
+    sceneFogColor_ = scene.fogColor.x >= 0.0f ? scene.fogColor : fogColor_;
+    sceneVolumetric_ = scene.volumetricIntensity >= 0.0f ? scene.volumetricIntensity
+                                                         : settings.volumetricIntensity;
+
+    // Which local lights this frame shades — everything downstream (both
+    // shadow passes and the material upload) indexes the list this produces.
+    selectLights(scene, camera);
+
     beginPass(FrameStats::PassShadow);
     shadowPass(scene, camera);
     spotShadowPass(scene, camera);
@@ -1236,13 +1573,21 @@ void Renderer::render(const RenderScene& scene, const Camera& camera, float time
     ssaoPass(camera);
     endPass();
     beginPass(FrameStats::PassComposite);
+    if (settings.volumetric && sceneVolumetric_ > 0.0f) volumetricPass(scene, camera);
     compositePass(scene, camera);
+    if (settings.ssr) ssrPass(camera);
     endPass();
     beginPass(FrameStats::PassForward);
     forwardPass(scene, camera);
     particlePass(scene, camera);
     debugPass(camera);
     endPass();
+    // TAA resolves the finished HDR frame; auto-exposure then measures the
+    // resolved (stable) image, and bloom/tonemap read it too.
+    beginPass(FrameStats::PassTaa);
+    taaPass(camera);
+    endPass();
+    autoExposurePass(dt);
     beginPass(FrameStats::PassBloom);
     bloomPass();
     endPass();

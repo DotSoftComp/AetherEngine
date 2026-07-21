@@ -34,7 +34,9 @@
 #include "engine/world.h"
 #include "engine/assets.h"
 #include "engine/scene_io.h"
+#include "engine/demo_input.h"
 #include "engine/project.h"
+#include "engine/packager.h"
 #include "engine/component_registry.h"
 #include "engine/save_game.h"
 #include "engine/game_module.h"
@@ -53,6 +55,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -100,13 +103,39 @@ static double msBetween(Clock::time_point a, Clock::time_point b) {
 // auto-tiered default.
 struct QualityOverrides {
     float renderScale = -1.0f;
+    float exposure = -1.0f;      // tonemap key; a game's overall look
+    float bloomStrength = -1.0f;
     int shadowCascades = -1;
     int spotShadows = -1;
     int pointShadows = -1;
     int vsync = -1;
+    int taa = -1;          // temporal anti-aliasing
+    int ssr = -1;          // screen-space reflections
+    int volumetric = -1;   // ray-marched light shafts
+    int autoExposure = -1; // adaptive exposure
     bool noInstancing = false;
 };
 static QualityOverrides g_quality;
+
+// Reads the optional "settings" block shared by game.json and project.aeproj,
+// so a game looks the same run from the editor's project as from a build.
+static void applyQualitySettings(const JsonValue& doc) {
+    const JsonValue* s = doc.find("settings");
+    if (!s) return;
+    g_quality.renderScale = (float)s->num("renderScale", -1.0);
+    g_quality.shadowCascades = s->integer("shadowCascades", -1);
+    g_quality.spotShadows = s->integer("spotShadows", -1);
+    g_quality.pointShadows = s->integer("pointShadows", -1);
+    g_quality.exposure = (float)s->num("exposure", -1.0);
+    g_quality.bloomStrength = (float)s->num("bloomStrength", -1.0);
+    if (s->find("vsync")) g_quality.vsync = s->flag("vsync", true) ? 1 : 0;
+    if (s->find("taa")) g_quality.taa = s->flag("taa", true) ? 1 : 0;
+    if (s->find("ssr")) g_quality.ssr = s->flag("ssr", true) ? 1 : 0;
+    if (s->find("volumetric"))
+        g_quality.volumetric = s->flag("volumetric", true) ? 1 : 0;
+    if (s->find("autoExposure"))
+        g_quality.autoExposure = s->flag("autoExposure", false) ? 1 : 0;
+}
 
 // Boots a packaged game: game.json next to the exe defines the project.
 // ---- --verify -----------------------------------------------------------------
@@ -246,13 +275,7 @@ static bool loadPackagedGame(Project& project) {
         for (const auto& kv : mods->obj)
             if (kv.second.type == JsonValue::Bool)
                 project.moduleFlags.emplace_back(kv.first, kv.second.boolean);
-    if (const JsonValue* s = doc.find("settings")) {
-        g_quality.renderScale = (float)s->num("renderScale", -1.0);
-        g_quality.shadowCascades = s->integer("shadowCascades", -1);
-        g_quality.spotShadows = s->integer("spotShadows", -1);
-        g_quality.pointShadows = s->integer("pointShadows", -1);
-        if (s->find("vsync")) g_quality.vsync = s->flag("vsync", true) ? 1 : 0;
-    }
+    applyQualitySettings(doc);
     AE_LOG("[Game] packaged boot: %s (%s)", project.name.c_str(), project.root.c_str());
     return true;
 }
@@ -302,6 +325,10 @@ int main(int argc, char** argv) {
     const char* projectArg = nullptr;
     bool gpuProfile = false; // per-pass GPU timing in the benchmark report
     bool verifyMode = false;
+    const char* demoPath = nullptr;   // scripted input timeline (playtesting)
+    const char* packageDir = nullptr; // headless "Build Game" (CI / scripts)
+    const char* shotsDir = nullptr;   // periodic captures while a demo runs
+    int shotEvery = 0;
     for (int i = 1; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--project") && i + 1 < argc) projectArg = argv[++i];
         if (!std::strcmp(argv[i], "--map") && i + 1 < argc) mapPath = argv[++i];
@@ -311,24 +338,57 @@ int main(int argc, char** argv) {
         if (!std::strcmp(argv[i], "--compare") && i + 1 < argc) comparePath = argv[++i];
         if (!std::strcmp(argv[i], "--psnrmin") && i + 1 < argc)
             psnrBudget = std::atof(argv[++i]);
+        if (!std::strcmp(argv[i], "--package") && i + 1 < argc) packageDir = argv[++i];
+        if (!std::strcmp(argv[i], "--demo") && i + 1 < argc) demoPath = argv[++i];
+        if (!std::strcmp(argv[i], "--shots") && i + 1 < argc) shotsDir = argv[++i];
+        if (!std::strcmp(argv[i], "--shotevery") && i + 1 < argc)
+            shotEvery = std::atoi(argv[++i]);
         if (!std::strcmp(argv[i], "--gpuprofile")) gpuProfile = true;
         if (!std::strcmp(argv[i], "--noinstancing")) g_quality.noInstancing = true;
+        if (!std::strcmp(argv[i], "--taa") && i + 1 < argc) g_quality.taa = std::atoi(argv[++i]);
+        if (!std::strcmp(argv[i], "--ssr") && i + 1 < argc) g_quality.ssr = std::atoi(argv[++i]);
+        if (!std::strcmp(argv[i], "--volumetric") && i + 1 < argc)
+            g_quality.volumetric = std::atoi(argv[++i]);
+        if (!std::strcmp(argv[i], "--autoexposure") && i + 1 < argc)
+            g_quality.autoExposure = std::atoi(argv[++i]);
         if (!std::strcmp(argv[i], "--cascades") && i + 1 < argc)
             g_quality.shadowCascades = std::atoi(argv[++i]);
         if (!std::strcmp(argv[i], "--spotshadows") && i + 1 < argc)
             g_quality.spotShadows = std::atoi(argv[++i]);
         if (!std::strcmp(argv[i], "--pointshadows") && i + 1 < argc)
             g_quality.pointShadows = std::atoi(argv[++i]);
+        if (!std::strcmp(argv[i], "--exposure") && i + 1 < argc)
+            g_quality.exposure = (float)std::atof(argv[++i]);
         if (!std::strcmp(argv[i], "--rscale") && i + 1 < argc)
             g_quality.renderScale = (float)std::atof(argv[++i]);
     }
     if (screenshotPath && captureFrames < 0) captureFrames = 60;
     if (verifyMode && captureFrames < 0) captureFrames = 300;
 
+    // A demo plays a fixed script, so its length sets the frame budget unless
+    // the caller asked for a specific one.
+    DemoInput demo;
+    bool demoMode = demoPath && demo.load(demoPath) && demo.valid();
+    if (demoMode && captureFrames < 0) captureFrames = (int)(demo.duration() * 60.0f) + 2;
+
     // Packaged layout wins unless --project explicitly overrides it.
     Project project;
     bool booted = false;
-    if (projectArg) booted = project.load(projectArg);
+    if (projectArg) {
+        booted = project.load(projectArg);
+        // The manifest's "settings" block applies however the game was started.
+        if (booted) {
+            std::ifstream pf(project.file, std::ios::binary | std::ios::ate);
+            if (pf) {
+                size_t n = (size_t)pf.tellg();
+                pf.seekg(0);
+                std::string t(n, 0);
+                pf.read(&t[0], (std::streamsize)n);
+                JsonValue doc;
+                if (jsonParse(t.c_str(), t.size(), doc)) applyQualitySettings(doc);
+            }
+        }
+    }
     else booted = loadPackagedGame(project) ||
                   false; // no game.json → fall through to the usage error
     if (!booted) {
@@ -337,6 +397,18 @@ int main(int argc, char** argv) {
         fatalDialog("No game to run.\n\nEither place this exe in a packaged game folder "
                     "(game.json) or pass --project <dir or .aeproj>.");
         return 1;
+    }
+
+    // --package <dir>: build a standalone game folder and exit. Same code path
+    // the editor's Build Game uses, available without an editor — so a build is
+    // one command in a script instead of a menu item someone has to remember.
+    if (packageDir) {
+        PackageOptions po;
+        po.outputDir = packageDir;
+        auto echo = [](const std::string& line) { std::puts(line.c_str()); };
+        bool packaged = packageGame(project, po, echo);
+        std::fflush(stdout);
+        return packaged ? 0 : 1;
     }
 
     // --compare needs a capture; default one into the project if none named.
@@ -375,6 +447,15 @@ int main(int argc, char** argv) {
         renderer.settings.renderScale = g_quality.renderScale < 0.25f  ? 0.25f
                                         : g_quality.renderScale > 1.0f ? 1.0f
                                                                        : g_quality.renderScale;
+    if (g_quality.exposure > 0.0f) renderer.settings.exposure = g_quality.exposure;
+    if (g_quality.bloomStrength >= 0.0f)
+        renderer.settings.bloomStrength = g_quality.bloomStrength;
+    if (g_quality.taa >= 0) renderer.settings.taa = g_quality.taa != 0;
+    if (g_quality.ssr >= 0) renderer.settings.ssr = g_quality.ssr != 0;
+    if (g_quality.volumetric >= 0)
+        renderer.settings.volumetric = g_quality.volumetric != 0;
+    if (g_quality.autoExposure >= 0)
+        renderer.settings.autoExposure = g_quality.autoExposure != 0;
 
     // `--frames N` without a screenshot is a real-timed benchmark: vsync off,
     // genuine dt, average frame time reported at exit. --verify rides the
@@ -441,6 +522,7 @@ int main(int argc, char** argv) {
 
     World world;
     std::string startScene = mapPath ? std::string(mapPath) : project.startupScene;
+    world.setCurrentScene(startScene);
     if (startScene.empty() || !loadWorld(world, assets, assets.resolvePath(startScene))) {
         AE_ERROR("[Game] cannot load startup scene '%s'", startScene.c_str());
         if (verifyMode) return verifyReport(false, false, 0, startScene);
@@ -449,6 +531,12 @@ int main(int argc, char** argv) {
     }
     world.missions.load(joinPath(project.root, "assets\\missions\\missions.json"));
     world.actions.loadOrDefaults(assets.resolvePath("assets/input.json"));
+    // Does the project bind Esc to anything? If so the game owns the key and
+    // must exit through its own menu (QuitGame); see the poll loop below.
+    bool escBoundByProject = false;
+    for (const auto& a : world.actions.actions)
+        for (const auto& k : a.keys)
+            if (k == "ESC" || k == "ESCAPE") escBoundByProject = true;
 
     // Verify: serialization must round-trip byte-stable before anything runs —
     // drift here means a hand-edited (or agent-edited) file the engine would
@@ -456,8 +544,20 @@ int main(int argc, char** argv) {
     bool resaveOk = true;
     if (verifyMode) {
         std::string a = serializeWorld(world, assets);
-        resaveOk = deserializeWorld(world, assets, a) && serializeWorld(world, assets) == a;
-        if (!resaveOk) AE_ERROR("[Verify] scene resave round-trip drift: %s", startScene.c_str());
+        std::string b;
+        if (deserializeWorld(world, assets, a)) b = serializeWorld(world, assets);
+        resaveOk = !b.empty() && b == a;
+        if (!resaveOk) {
+            // "It drifted" is not a fix. Write both sides so the difference can
+            // be diffed directly — this check exists to be acted on.
+            std::string dir = assets.resolvePath("Intermediate");
+            std::filesystem::create_directories(dir);
+            std::ofstream(dir + "/verify_resave_before.json", std::ios::binary) << a;
+            std::ofstream(dir + "/verify_resave_after.json", std::ios::binary) << b;
+            AE_ERROR("[Verify] scene resave round-trip drift: %s "
+                     "(wrote Intermediate/verify_resave_before.json and _after.json)",
+                     startScene.c_str());
+        }
     }
 
     Font font;
@@ -467,9 +567,12 @@ int main(int argc, char** argv) {
 
     Clock::time_point prev = Clock::now(), start = prev;
     int frame = 0;
+    float demoTime = 0.0f;
     double passSums[FrameStats::PassCount] = {};
     double updateSum = 0.0, swapSum = 0.0;
 
+    float gameTime = 0.0f; // scaled clock the world sees (see time scale below)
+    bool mouseCaptured = false;
     bool compareOk = true; // stays true when no --compare
     RenderScene renderScene;
     while (window.poll()) {
@@ -478,16 +581,52 @@ int main(int argc, char** argv) {
         float time = std::chrono::duration<float>(now - start).count();
         prev = now;
         if (dt > 0.1f) dt = 0.1f;
-        // Deterministic stepping for captures/verification.
-        if (screenshotPath || verifyMode) { dt = 1.0f / 60.0f; time = frame / 60.0f; }
+        // Deterministic stepping for captures/verification. A demo must step
+        // deterministically too, or the same timeline plays differently on a
+        // faster machine.
+        if (screenshotPath || verifyMode || demoMode) { dt = 1.0f / 60.0f; time = frame / 60.0f; }
 
-        const Input& in = window.input();
-        if (in.keys[0x1B]) break; // Esc (Input.keys is VK-indexed; 0x1B = VK_ESCAPE)
+        // A demo replaces the player: the timeline synthesizes exactly the
+        // Input a person would have produced, so gameplay, the input map and
+        // the camera rig all run their real code paths.
+        Input demoIn;
+        if (demoMode) {
+            demo.sample(demoTime, dt, demoIn);
+            demoTime += dt;
+        }
+        const Input& in = demoMode ? demoIn : window.input();
+        if (demoMode && demo.finished(demoTime) && captureFrames < 0) break;
+        // Esc closes the game only when the project hasn't claimed it. A game
+        // that binds Esc (a Pause action, a menu) owns the key and exits
+        // through its own UI via the QuitGame node — otherwise Esc would both
+        // open the pause menu and kill the process.
+        if (!demoMode && window.input().keys[0x1B] && !escBoundByProject) break;
         if (window.wasResized()) ensureRenderTarget(window.width(), window.height());
 
+        // Time scale: a paused game still ticks its scripts (so the graph
+        // watching for the unpause key runs) but advances neither the
+        // simulation nor the clock, so cooldowns do not silently elapse
+        // behind the menu.
+        float scale = world.timeScale();
+        dt *= scale;
+        gameTime += dt;
+
         Clock::time_point u0 = Clock::now();
-        world.update(dt, time, in, true);
+        world.update(dt, gameTime, in, true);
         processSaveRequests(world, assets);
+        processSceneRequest(world, assets); // level transitions (LoadScene node)
+        // Lock the cursor while something is steering with it. The intent is
+        // logged either way so a headless demo can assert on it; only a real
+        // session actually grabs the pointer (a demo supplies its own motion
+        // and must never steal the user's mouse).
+        bool wantCapture = world.wantsMouseCapture();
+        if (wantCapture != mouseCaptured) {
+            mouseCaptured = wantCapture;
+            AE_LOG("[Input] mouse %s", wantCapture ? "captured (cursor hidden, locked)"
+                                                   : "released (cursor visible)");
+        }
+        if (!demoMode) window.setMouseCapture(wantCapture);
+        if (world.quitRequested()) break;   // a game menu's Quit
         world.buildRenderScene(renderScene);
         // The listener is the resolved gameplay camera (valid after buildRenderScene).
         const Camera& cam = world.camera();
@@ -521,6 +660,14 @@ int main(int argc, char** argv) {
         }
         ui.end();
 
+        // --shots <dir> --shotevery N: a contact sheet of the run. This is how
+        // a scripted demo is reviewed — you read the frames, not the logs.
+        if (shotsDir && shotEvery > 0 && frame % shotEvery == 0) {
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s/frame_%05d.bmp", shotsDir, frame);
+            captureScreenshot(window.width(), window.height(), path);
+        }
+
         if (screenshotPath && ++frame >= captureFrames) {
             captureScreenshot(window.width(), window.height(), screenshotPath);
             if (comparePath)
@@ -532,6 +679,9 @@ int main(int argc, char** argv) {
         window.swapBuffers();
         swapSum += msBetween(s0, Clock::now());
 
+        if (demoMode && !benchmark && !screenshotPath) {
+            if (++frame >= captureFrames) break;
+        }
         if (benchmark && ++frame >= captureFrames) {
             double secs = std::chrono::duration<double>(now - start).count();
             AE_LOG("[Benchmark] %dx%d: %d frames in %.2fs = %.1f fps (%.2f ms/frame)",

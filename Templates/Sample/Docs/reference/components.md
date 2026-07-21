@@ -17,12 +17,14 @@ hints, not validation.
 | `mesh` | string | `""` | Mesh |  |
 | `texSet` | string | `""` | Textures |  |
 | `castShadow` | bool | `true` | Cast shadow |  |
+| `navStatic` | bool | `false` | Nav static (bake into navmesh) |  |
 | `drawDistance` | float | `0` | Draw distance (0 = inf) | 0 .. 10000 |
 | `material.baseColor` | vec4 | `[1, 1, 1, 1]` | Base Color |  |
 | `material.metallic` | float | `0` | Metallic |  |
 | `material.roughness` | float | `0.5` | Roughness |  |
 | `material.emissive` | vec3 | `[0, 0, 0]` | Emissive |  |
 | `material.uvScale` | float | `1` | UV Scale | 0.05 .. 32 |
+| `material.worldUV` | bool | `false` | World-space UVs |  |
 | `material.normalScale` | float | `1` | Normal Scale |  |
 | `material.occlusionStrength` | float | `1` | Occlusion |  |
 | `material.alphaCutoff` | float | `-1` | Alpha Cutoff |  |
@@ -72,6 +74,7 @@ hints, not validation.
 |---|---|---|---|---|
 | `path` | string | `""` | Model |  |
 | `animate` | bool | `true` | Animate |  |
+| `navStatic` | bool | `false` | Nav static (bake into navmesh) |  |
 | `clip` | int | `0` | Clip |  |
 
 ## Spin
@@ -307,9 +310,47 @@ hints, not validation.
 | field | type | default | label | range |
 |---|---|---|---|---|
 | `speed` | float | `3` | Speed | 0 .. 50 |
+| `radius` | float | `0.4` | Radius | 0.05 .. 5 |
 | `acceptance` | float | `0.35` | Acceptance radius | 0.05 .. 5 |
 | `repathInterval` | float | `0.5` | Repath interval (s) | 0 .. 10 |
 | `faceMoveDir` | bool | `true` | Face move direction |  |
+| `avoidance` | bool | `false` | Local avoidance (crowd) |  |
+
+## NavObstacle
+
+- display name: Nav Obstacle  
+- category: AI  
+- source: module: ai
+
+| field | type | default | label | range |
+|---|---|---|---|---|
+| `radius` | float | `0.6` | Radius | 0.05 .. 20 |
+| `height` | float | `2` | Height | 0.1 .. 40 |
+| `moveThreshold` | float | `0.25` | Move threshold (m) | 0 .. 10 |
+
+## BehaviorTree
+
+- display name: Behavior Tree  
+- category: AI  
+- source: module: ai
+
+| field | type | default | label | range |
+|---|---|---|---|---|
+| `tree` | string | `""` | Behavior tree |  |
+
+## Perception
+
+- display name: Perception  
+- category: AI  
+- source: module: ai
+
+| field | type | default | label | range |
+|---|---|---|---|---|
+| `targetTag` | string | `"Player"` | Target tag (name match) |  |
+| `sightRange` | float | `14` | Sight range | 0 .. 200 |
+| `sightFov` | float | `100` | Sight FOV | 0 .. 360 |
+| `hearingRange` | float | `0` | Hearing range | 0 .. 200 |
+| `requireLineOfSight` | bool | `true` | Require line of sight |  |
 
 ## DialogueTrigger
 

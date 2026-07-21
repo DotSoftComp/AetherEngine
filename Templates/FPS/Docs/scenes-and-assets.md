@@ -99,6 +99,8 @@ listed and copy its shape (all are covered by editor panels too):
 | Material graph | `assets/materials/energy.json` | dataflow nodes -> PBR output (BaseColor/Metallic/Roughness/Emissive/Opacity/AO + tangent-space **Normal** — feed it from a `NormalMap` node for bumped materials); up to 8 textures per graph; **subgraphs**: a `Subgraph` node inlines another materials/*.json as a function (its `SubInput` nodes = the caller's A-D pins, one `SubOutput` = the result); compiled to GLSL at load; Ctrl+S in the canvas hot-reloads |
 | Input map | `assets/input.json` | named actions (buttons) + axes bound to keys/mouse/gamepad; read via `OnAction`/`IsActionDown`/`GetAxis` and by CharacterController |
 | Missions | `assets/missions/missions.json` | missions/objectives + story flags; scripts read/write flags with `GetFlag`/`SetFlag` |
+| Texture import settings | `<image>.png.import.json` (next to any source image) | overrides how that image imports — `srgb` (false for data maps), `normalMap` (encode two-channel **BC5** + reconstruct Z in the shader — use it for every normal map), `compress` (false = plain RGBA8), `maxSize` (downscale so the longest edge fits), `mipBias` (drop the N largest mips = less VRAM). Missing file = engine defaults (glTF already tags its own colour/normal slots). Editing the image **or** this sidecar hot re-imports it live in the editor — the texture keeps its id, so materials update in place |
+| Behavior tree | `assets/ai/*.json` (attach a `BehaviorTree` component) | nested NPC decision tree (`behaviorTree: 1`, `root` node). Composites: `Sequence` (all children succeed), `Selector` (first success), `Parallel`. Decorators: `Inverter`, `Repeat`, `Succeeder` (one `child`). Leaves act/test on the entity: `MoveToTarget`/`MoveToPoint` (drive the sibling NavAgent; `v` = point), `Wait` (`time` s), `Stop`, `Log` (`s` = message), and conditions `CanSeeTarget`/`HasTarget`/`IsAtTarget`. A small blackboard (target entity + position) is written by `CanSeeTarget` (reads the sibling `Perception` component's sight cone + hearing) and read by `MoveToTarget` — so a guard is `Selector[ Sequence[CanSeeTarget, MoveToTarget], Wait ]` |
 
 ## Lighting and shadows
 
@@ -112,6 +114,22 @@ GPUs; override with the `spotShadows` / `pointShadows` game settings (or the
 `--spotshadows N` / `--pointshadows N` runtime flags, `0` = off). Directional
 local lights and the sun are shadowed by the cascades; only point/spot use the
 local maps.
+
+## Anti-aliasing and exposure
+
+**TAA** (temporal anti-aliasing) is **on** by default: the projection is jittered
+sub-pixel each frame and the previous frame is reprojected and blended in, so
+edges and specular shimmer resolve far better than FXAA alone (which still runs
+after it). It is deterministic — a fixed-frame capture is still bit-identical,
+so `--compare` works unchanged. Toggle with the `taa` game setting or
+`--taa 0|1`.
+
+**Auto-exposure** is **off** by default (it re-keys the whole image, so enabling
+it changes an existing project's look). On, the renderer measures the frame's
+log-average luminance and adapts exposure toward middle grey — a scene stays
+readable walking from sunlight into a cave with no per-level tuning — and the
+`exposure` setting becomes a relative bias rather than an absolute multiplier.
+Enable with the `autoExposure` game setting or `--autoexposure 1`.
 
 ## Verification
 

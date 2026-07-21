@@ -124,6 +124,7 @@ add_library(ae_core SHARED
     src/engine/anim_graph.cpp
     src/engine/anim_ik.cpp
     src/engine/data_table.cpp
+    src/engine/demo_input.cpp
     src/engine/doc_gen.cpp
     src/engine/agent_bridge_help.cpp
     src/engine/save_game.cpp
@@ -134,6 +135,7 @@ add_library(ae_core SHARED
     src/engine/packager.cpp
     src/physics/physics.cpp
     src/ai/nav_mesh.cpp
+    src/ai/behavior_tree.cpp
     src/audio/audio.cpp
     src/script/script_graph.cpp
     src/render/material_graph.cpp
@@ -153,7 +155,7 @@ target_compile_definitions(ae_core PRIVATE AE_BUILD_CORE)
 target_include_directories(ae_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(ae_core PUBLIC opengl32 user32 gdi32
                               PRIVATE ole32 shlwapi windowscodecs uuid dwmapi xaudio2 xinput9_1_0 Jolt
-                              PRIVATE Recast Detour)
+                              PRIVATE Recast Detour DetourCrowd DetourTileCache)
 # Classes/functions are exported wholesale; global data additionally carries
 # AE_API (see src/core/ae_api.h).
 set_target_properties(ae_core PROPERTIES

@@ -688,6 +688,9 @@ void Editor::simulate(float dt) {
         playClock_ += dt;
         world_->update(dt, playClock_, in, true);
         processSaveRequests(*world_, *assets_);
+        // A LoadScene during Play swaps the map in-place; the edit-mode scene is
+        // restored on Stop from the pre-Play snapshot, so nothing is lost.
+        if (processSceneRequest(*world_, *assets_)) select(nullptr);
     } else if (playing_) {
         world_->update(0.0f, playClock_, in, false); // paused: freeze, keep pose
     } else {
@@ -775,6 +778,10 @@ void Editor::frame(float dt, float) {
     }
 
     pollCompile(); // stream script-build output; hot-reload the DLL when done
+    // Hot re-import: an image or material graph edited outside the editor (or
+    // its .import.json sidecar) rebuilds in place — ids stay stable, so live
+    // materials just start showing the new pixels.
+    if (assets_) assets_->pollSourceChanges();
     pumpAgentBridge(); // PulseLABS requests, before simulate so edits tick this frame
 
     simulate(dt);

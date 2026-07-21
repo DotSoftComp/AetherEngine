@@ -250,6 +250,112 @@ hackability.
 
 ---
 
+## Part 3b — What building a real game found (2026-07-19)
+
+`Games/Inferno` is a complete four-level Doom-like built on the engine: three
+weapons, four monster types, keys and locked doors, a boss, menus and an
+ending. It exists as a forcing function — the fastest way to find out what an
+engine is missing is to ship something on it.
+
+It found sixteen defects and gaps. Almost all of them were invisible to the
+existing smoke tests because they only bite once gameplay *composes*.
+
+**Bugs that made whole categories of gameplay impossible**
+
+| Defect | Why it mattered |
+|---|---|
+| Spawning during a script tick reallocated `entities_` mid-iteration | Any shooter crashes: an impact effect per bullet is a spawn per frame |
+| `World::destroy` orphaned children instead of destroying the subtree | Every prefab-based enemy left its head and eyes floating on death |
+| String pins defaulted to a Float `0`, so "empty" read as `"0"` | `FindEntity`'s documented "leave the input empty" never worked — silently, in every graph that used it |
+| `lockRotation` bodies had their rotation overwritten by the solver each frame | Nothing scripted could turn a character; the shipped `faceMoveDir` was equally broken |
+| Raycasts hit trigger volumes and the caster's own body | Hitscan weapons hit the medkit at your feet; monster line-of-sight always saw its own head |
+| Renderer took the *first* 8 lights in scene order | A level with 60 lamps lit whichever rooms happened to be authored first |
+| `%g` float serialization + unconditional re-normalize on load | Scene save/load never converged; `--verify` reported drift on untouched scenes |
+
+**Gaps that were simply missing**
+
+Runtime entity spawning (`SpawnPrefab`), entity messaging (`SendEvent` /
+`OnEvent` / `BroadcastEvent`) — the verb every interaction needs, cross-entity
+variables, level transitions (`LoadScene`, `ReloadScene`), dynamic flag access
+(`GetFlagNamed` / `AddFlag` / `AddFlagNamed`) without which nothing can be
+data-driven, `FindNearest` with a targeting cone, `Dot`, `SetTrigger` (a moving
+platform must stop colliding or it launches whoever is standing in it),
+`SetEmissive` / `SetBaseColor` / `SetLight`, and `QuitGame`.
+
+Beyond scripting: file-based texture sets (`.texset.json`) so a project can
+ship its own surfaces; world-space UVs, without which level geometry built from
+stretched boxes has no usable texel density; per-scene fog, because a tech base
+and a volcano are not the same air; conditional UI visibility (`showIfFlag`),
+which is how a HUD shows the keys you carry; `settings` honoured from
+`project.aeproj` and carried into packaged builds; cylinder and quad primitives.
+
+**Two the first real playtest found**
+
+The runtime never captured the mouse, so the OS cursor sat visible on top of
+the game and walked off the screen edge — the camera jammed part-way through
+every turn. Fixed the way it should be: any rig that steers from mouse motion
+calls `World::requestMouseLook()` while it drives, so a first-person scene locks
+the cursor and a menu scene does not, with no per-game wiring. A `SetMouseCapture`
+node overrides it for the case the rule cannot know about (a pause menu drawn
+over live gameplay). And `World::setTimeScale` / `SetTimeScale` — a pause menu
+that does not stop the clock is a menu you get shot through; at scale 0 the
+simulation freezes while scripts keep ticking, so whatever paused can unpause.
+
+**And one the sky itself was hiding**
+
+The Nishita atmosphere clamped its ray-march against the planet using the near
+root of the ray-sphere test *unconditionally*. For any upward ray both planet
+roots are behind the eye, so the march was told to end ~12 700 km **behind** the
+camera: every sample landed inside the planet, `exp(-h/H)` overflowed, and the
+transmittance extinguished the ray. The result was a black cap over the zenith
+above a brightly lit ground — a sky that read as upside down, and an IBL whose
+strongest light came from below. Both clamps are now correct (march from the
+eye; the ground occludes only when it is actually ahead), and the ground's
+radiance is derived from the sky that lights it instead of from a fixed
+multiple of the sun intensity, so the hemispheres are the right way round.
+
+**Renderer pass (2026-07-19)**
+
+Two of four planned realism features landed, both per-scene controllable and
+both regression-checked against all three templates:
+
+- **Volumetric lighting** (`shaders/volumetric.frag`). A half-res ray-march that
+  tests each step against the sun's cascade shadow map and every local light,
+  accumulating in-scattered radiance with a Henyey-Greenstein phase function.
+  This is what the analytic height fog could never do: it can say whether a
+  point in mid-air is *lit*, so lamps throw visible cones and doorways throw
+  shafts. Dithered start offsets + a depth-aware upsample keep it cheap
+  (composite 0.2 -> 1.3 ms at 1920x1200) and free of banding. One subtlety worth
+  recording: the authored `fogColor` is the analytic fog's *radiance*, often
+  near-black indoors; used directly as a scattering albedo it extinguished the
+  view ray while scattering nothing back, so the scene just went dark as
+  density rose. The shader renormalises it to an energy-conserving albedo.
+- **Screen-space reflections** (`ssr.frag` + `ssr_resolve.frag`). The geometry
+  pass now writes a fourth target (specular weight + roughness) so the resolve
+  can add exactly the *difference* between the traced reflection and the
+  environment probe already in the frame — adding it outright would double-count
+  the probe, replacing it wholesale would pop at the screen edge. Two rejection
+  rules earned their place: the ray must start offset from its own surface (or
+  it reflects the pixel being shaded, which smears), and a hit must not be
+  grazing (or the thickness test guesses, which speckles).
+
+Still queued: decals + parallax occlusion, and the grading/post pass.
+
+**The one that changes how the engine is used**
+
+`AetherRuntime --demo <timeline.json>` plays a scripted input timeline. The
+verify loop could already prove a scene *loads*; it could not prove the game
+*works*. With demos, Inferno tests itself: six isolated arenas assert that a
+bullet kills, that every pickup applies, that a locked door refuses and its key
+opens it, that the exit loads the next level, that the boss can be killed, and
+that the menu starts a game. `--shots <dir> --shotevery N` turns any run into a
+contact sheet. `--package <dir>` builds a standalone game headlessly.
+
+This is the missing half of the agent-native pitch. "Run the game headless and
+read your own logs" is only worth something if the game can be *played* headless.
+
+---
+
 ## Part 4 — Roadmap
 
 Ranked by strategy: **A** cements the differentiator, **B** removes adoption
@@ -289,11 +395,11 @@ blockers, **C** closes expected-feature gaps, **D** is scale/breadth,
 | C1 | **Animation v2** ✅ *(shipped 2026-07-12)* — Per-instance poses: `ModelPose` (node TRS + palettes + morph state) moved out of the shared `Model` asset into ModelComponent, so any number of entities share one glTF and animate independently (all Model sampling is now const, pose-based). AnimGraph v2 (`animGraph: 2`, v1 files still load): **layers** (each its own state machine, overlaid with weight/`weightParam` + optional `maskBone` subtree mask) and **blend-space states** (`blend1d`/`blend2d`, gradient-band weighting, phase-synced motions) alongside clip states. **Root motion** on the Animator (`rootMotion` + auto/named `rootBone`, XZ to entity with loop-seam compensation). **Two-bone IK** component (`TwoBoneIK`: end bone + target/pole entities, runs in the new `onLateUpdate` phase after physics). **Morph targets**: glTF POSITION/NORMAL targets + `weights` animations, CPU-blended into per-instance dynamic meshes. Anim Graph panel: layer bar + blend-space/motion editing. ABI bumped to v2 (`onLateUpdate` virtual) — game modules/plugins recompile; template binaries rebuilt. Sample fox graph upgraded to a live Speed blend space. Remaining niceties: additive layers, IK for >2-bone chains, GPU morph blending. |
 | C2 | **Particles v2** ✅ *(shipped 2026-07-12, GPU sim staged)* — Sprite textures on emitters (`texture` path, sRGB, cached via the asset library; blank keeps the procedural soft disc), **flipbook animation** (`flipbookCols/Rows` grid + `flipbookFps`, 0 = one pass over the particle's lifetime; cell UVs computed CPU-side), **per-particle rotation** (`spin` deg/s ± `spinJitter`, `randomRotation` start roll; billboard basis rolled in the camera plane), and **soft depth fade** (`softFade` meters — fragment fades against the opaque depth buffer, same attached-depth-sample pattern as the composite pass; kills hard clip lines in smoke/fog). Verified visually + A/B `--compare` (fade on/off vs an intersecting wall). *GPU sim for big counts deliberately staged:* the RHI has no compute path yet — do it after B1's RHI phase 3 so it lands portable instead of GL-only (CPU sim measured ~0.2 ms at current template loads; cap is 10k/emitter). |
 | C3 | **Material graphs v2** ✅ *(shipped 2026-07-12)* — **Normal-map output**: the Output node gained a tangent-space `Normal` pin (new `NormalMap` texture node decodes + applies strength; generated TBN application spliced at a new `//__MG_NORMAL__` marker in pbr.frag, so graph materials get bumped lighting in both passes). **Texture slots raised 4 → 8** (bindings 13..20; slots shared across subgraph expansions). **Subgraphs/functions**: a `Subgraph` node references another `assets/materials/*.json` and inlines it at compile time — `SubInput` nodes (pin index 0-3 = caller's A-D) are the arguments, one `SubOutput` the return; nested subgraphs cached per compile, recursion/depth guarded (magenta on cycle or missing file). Codegen API reshaped (`MGGenerated` + `MGSubLoader`); existing graphs untouched (Normal pin appended last, loader pads). Verified: subgraph-tinted + bump-mapped wall renders, normal on/off A/B compare (61% px), 6-texture graph compiles past the old cap. |
-| C4 | Navigation: tile cache + dynamic obstacles (rebake-free), DetourCrowd avoidance, render-mesh bake input, behavior trees + perception. |
+| C4 | **Navigation v2** ✅ *(shipped 2026-07-12)* — Navmesh rebuilt on a **DetourTileCache** tiled pipeline (per-tile Recast layer build, passthrough compressor, walkable mesh-process), so **dynamic obstacles carve rebake-free**: `NavMesh::addObstacle`/`removeObstacle` + `NavObstacle` component (cylinder that re-carves when moved), only touched tiles rebuild on `NavMesh::update` (ticked once/frame by World after physics). **DetourCrowd** avoidance: the mesh owns a `dtCrowd`; `NavAgent` gained an `avoidance` flag that drives kinematic agents through the crowd (RVO local avoidance of other agents + obstacles, read back in `onLateUpdate`). **Render-mesh bake input**: `Mesh` retains a light CPU triangle copy (`keepNavGeo`), `MeshRenderer`/`Model` gained a `navStatic` flag, and `gatherNavTriangles` bakes those real triangles alongside colliders (floors/props need no collider). **Behavior trees + perception**: `BehaviorTree` component runs a nested JSON tree (`assets/ai/*.json` — Sequence/Selector/Parallel, Inverter/Repeat/Succeeder, leaves MoveToTarget/MoveToPoint/Wait/Stop/Log + CanSeeTarget/HasTarget/IsAtTarget) over a small blackboard; `Perception` gives sight-cone (range + FOV + optional LOS raycast) and hearing sensing. Verified headless (nav_smoke: obstacle detour+restore rebake-free, two crowd agents swap without overlapping, perception cone/range) and end-to-end (two BT guards chase a player, splitting around a NavObstacle, on a navmesh auto-baked from a collider-less navStatic floor). Remaining: off-mesh links (jumps/ladders), BT canvas editor (JSON-authorable for now). |
 | C5 | Data tables: per-column type enforcement, Vec3/asset-ref/color cell types, CSV import/export. |
-| C6 | Import pipeline: import-settings sidecars, BC5 normal maps, mip streaming, dependency tracking/hot-reimport. |
+| C6 | **Import pipeline v2** ✅ *(shipped 2026-07-17)* — **Import-settings sidecars**: `<image>.import.json` next to any source image (`srgb`, `normalMap`, `compress`, `maxSize`, `mipBias`) overrides the importer — choices live in the project, in git, beside the asset, with no editor database. Honoured by the glTF/OBJ/FBX importers, material-graph textures and UI sprites. **BC5 normal maps**: normal maps encode two-channel BC5 (`stb_compress_bc5_block`, RGTC2) instead of BC1/BC3's joint 565 line fit; the shaders reconstruct Z from XY (`sqrt(1-x²-y²)`) in both `pbr.frag` and the material graph's `mgUnpackNormal`, which is equivalent for classic RGB maps so nothing else changed. glTF auto-tags its `normalTexture` slots. **Mip streaming**: `mipBias` per asset + a global `setTextureMipBias()` budget drop the N largest levels at upload (VRAM halves per step) while the `.aetex` cache keeps every level, so raising the budget later costs no re-encode; `maxSize` downscales pre-encode. Import settings fold into the cache key so the same bytes can't collide across settings. **Dependency tracking / hot re-import**: every imported asset registers its sources (image, and for a material graph the .json + each inlined subgraph + each texture); `AssetLibrary::pollSourceChanges()` (editor frame loop, throttled) stats them — including the sidecar — and re-imports in place. New `rhi::recreateTexture2D` rebuilds the GPU object **behind the same handle id**, which is what makes this safe: materials cache raw texture ids, so a re-import must land on the same id. Verified: BC5 auto-selected for the FlightHelmet's 6 normal maps; a sidecar took a 2048² texture to 256²/43 KB (from 2731 KB) with `[mip-biased]`. |
 | C7 | Profiling: CPU sampling profiler, stat capture/export (chrome-tracing JSON), thick debug lines. |
-| C8 | Rendering quality ladder (in rough value order): TAA → auto-exposure → SSR → baked lightmaps or DDGI-style GI → decals → volumetrics → DoF/motion blur → post-process volumes. |
+| C8 | Rendering quality ladder (in rough value order): ~~TAA~~ ✅ → ~~auto-exposure~~ ✅ → **SSR → baked lightmaps or DDGI-style GI → decals → volumetrics → DoF/motion blur → post-process volumes** (remaining). *Top two shipped 2026-07-17; the rest are each a feature in their own right and are deliberately untouched — this row is a ladder, not one task.* **TAA**: Halton(2,3) sub-pixel jitter on the projection (every pass now goes through `Renderer::projFor` so they rasterize/reconstruct with the *same* matrix) + a reprojected history resolved with a YCoCg 3x3 neighbourhood clamp, and history weight dropped where the clamp bites (that's what kills ghosting on movers). Reprojection uses the **unjittered** matrices on purpose: with jittered ones a static pixel maps a sub-pixel off itself each frame and the history bilinear-resamples into blur — the bug is easy to ship, so it's called out in the code. Resolve/history swap by handle (no blits) and feed `hdrSource_`. Verified: silhouette edges smooth with texture detail preserved (A/B zoom crops), and **captures stay bit-identical (PSNR 99)** so `--compare` still works. `--taa 0|1` + `game.json` `taa`. **Auto-exposure**: log-average luminance reduced to 1x1 (geometric mean — robust to a few bright pixels), ping-ponged temporal adaptation with separate up/down rates (eye-like), tonemap scales to a 0.18 middle-grey key with `exposure` demoted to a relative bias. Verified: the Blank scene went from a washed-out mean 211 to 115 with tile detail and crate saturation recovered. `--autoexposure 0|1` + `game.json` `autoExposure`. Off by default (it changes every existing project's look); TAA on by default. |
 | C9 | Audio v2: streaming (music), OGG import, mixer buses/effects, script nodes for volume/pitch. |
 
 ### Tier D — Scale & breadth

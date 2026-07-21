@@ -27,6 +27,7 @@ typedef uint64_t GLuint64;
 #define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT  0x83F3
 #define GL_COMPRESSED_SRGB_S3TC_DXT1_EXT  0x8C4C
 #define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT 0x8C4F
+#define GL_COMPRESSED_RG_RGTC2            0x8DBD // BC5: two-channel normals
 #define GL_QUERY_RESULT                   0x8866
 #define GL_QUERY_RESULT_AVAILABLE         0x8867
 #define GL_LINES                          0x0001

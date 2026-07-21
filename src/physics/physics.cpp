@@ -380,6 +380,18 @@ void PhysicsWorld::step(World& world, float dt) {
             if (length(rb->velocity - cur) > 1e-3f) bi.SetLinearVelocity(r.id, toJ(rb->velocity));
             Vec3 curA = fromJ(bi.GetAngularVelocity(r.id));
             if (length(rb->angularVelocity - curA) > 1e-3f) bi.SetAngularVelocity(r.id, toJ(rb->angularVelocity));
+            // lockRotation means "the solver never turns this body — gameplay
+            // does": a character rig, a look-at, an AI facing its target. So a
+            // rotation written by a behavior this frame is pushed INTO the body
+            // (and, below, never read back over). Without this the readback
+            // reinstates the body's own rotation every frame and any scripted
+            // facing silently does nothing.
+            float rotDelta = std::fabs(wrot.x - r.lastRot.x) + std::fabs(wrot.y - r.lastRot.y) +
+                             std::fabs(wrot.z - r.lastRot.z) + std::fabs(wrot.w - r.lastRot.w);
+            if (d.lockRot && rotDelta > 1e-4f) {
+                bi.SetRotation(r.id, toJQ(wrot), JPH::EActivation::DontActivate);
+                r.lastRot = wrot;
+            }
         }
     }
 
@@ -412,13 +424,16 @@ void PhysicsWorld::step(World& world, float dt) {
         r.lastPos = wpos;
         r.lastRot = wrot;
 
+        // Gameplay owns the facing of a lockRotation body (see the push above),
+        // so only its position comes back from the solver.
+        const bool takeRot = !r.desc.lockRot;
         if (e->parent()) {
             Mat4 pm = e->parent()->worldMatrix();
             e->transform.position = transformPoint(inverse(pm), wpos);
-            e->transform.rotation = quatMul(quatConj(mat4Rotation(pm)), wrot);
+            if (takeRot) e->transform.rotation = quatMul(quatConj(mat4Rotation(pm)), wrot);
         } else {
             e->transform.position = wpos;
-            e->transform.rotation = wrot;
+            if (takeRot) e->transform.rotation = wrot;
         }
         if (auto* rb = e->getComponent<RigidBodyComponent>()) {
             rb->velocity = fromJ(bi.GetLinearVelocity(r.id));
@@ -436,13 +451,32 @@ void PhysicsWorld::step(World& world, float dt) {
 }
 
 RayHit PhysicsWorld::raycast(World& world, const Vec3& origin, const Vec3& dir,
-                             float maxDist) const {
+                             float maxDist, const Entity* ignore) const {
     RayHit best;
     if (!impl_) return best;
     Vec3 d = normalize(dir);
     JPH::RRayCast ray(toJR(origin), toJ(d * maxDist));
     JPH::RayCastResult res;
-    if (!impl_->system.GetNarrowPhaseQuery().CastRay(ray, res)) return best;
+    // Sensors are trigger volumes — pickup radii, area triggers, damage zones.
+    // They must not stop a ray: a shot has to pass through the medkit you are
+    // standing next to and hit the monster behind it, and a line-of-sight test
+    // must not think a trigger is a wall.
+    JPH::BodyID skip;
+    if (ignore) {
+        auto it = impl_->bodies.find(const_cast<Entity*>(ignore));
+        if (it != impl_->bodies.end()) skip = it->second.id;
+    }
+    struct Filter : JPH::BodyFilter {
+        JPH::BodyID skip;
+        bool ShouldCollide(const JPH::BodyID& id) const override { return id != skip; }
+        bool ShouldCollideLocked(const JPH::Body& body) const override {
+            return !body.IsSensor() && body.GetID() != skip;
+        }
+    } bodyFilter;
+    bodyFilter.skip = skip;
+    if (!impl_->system.GetNarrowPhaseQuery().CastRay(
+            ray, res, {}, {}, bodyFilter))
+        return best;
 
     best.hit = true;
     best.distance = res.mFraction * maxDist;

@@ -23,7 +23,12 @@ Entity* World::spawnWithGuid(const std::string& name, const Guid& guid, Entity* 
 }
 
 void World::destroy(Entity* e) {
-    if (e) e->pendingDestroy_ = true;
+    // The whole subtree goes: a prefab instance is one thing to gameplay (an
+    // enemy is a body plus a head plus eyes), so destroying its root must not
+    // leave the parts behind floating in the level.
+    if (!e) return;
+    e->pendingDestroy_ = true;
+    for (Entity* c : e->children_) destroy(c);
 }
 
 Entity* World::find(const std::string& name) const {
@@ -115,6 +120,9 @@ void World::update(float dt, float time, const Input& input, bool tickBehaviors)
     input_ = &input;
     dt_ = dt;
     time_ = time;
+    // Rigs re-assert mouse-look every frame they drive, so a scene that no
+    // longer has one (a menu, a cutscene) releases the cursor by default.
+    mouseLookWanted_ = false;
     actions.update(input, pollGamepad(0));
 
     // Resolve transforms *before* ticking components, so onStart/onUpdate
@@ -129,9 +137,17 @@ void World::update(float dt, float time, const Input& input, bool tickBehaviors)
     // Start freshly-attached components, then tick everything active. Skipped
     // entirely in the editor's edit mode (transforms still recompute below).
     if (tickBehaviors) {
-        for (const auto& e : entities_) {
+        // Indexed, not range-for: a script may spawn during its own tick (a
+        // muzzle impact, a fireball, a monster), and appending to entities_
+        // reallocates the vector out from under an iterator. The Entity objects
+        // live behind unique_ptr so they never move — only the vector's buffer
+        // does — so re-reading entities_[i] each step is safe. Anything spawned
+        // mid-sweep is ticked this frame too, which is what a spawner wants.
+        for (size_t i = 0; i < entities_.size(); ++i) {
+            Entity* e = entities_[i].get();
             if (!e->active_ || e->pendingDestroy_) continue;
-            for (const auto& c : e->components_) {
+            for (size_t ci = 0; ci < e->components_.size(); ++ci) {
+                Component* c = e->components_[ci].get();
                 if (!c->started_) { c->onStart(); c->started_ = true; }
                 c->onUpdate(dt);
             }
@@ -144,12 +160,19 @@ void World::update(float dt, float time, const Input& input, bool tickBehaviors)
         recomputeTransforms();
         if (engineModules().enabled("physics")) physics.step(*this, dt);
 
-        // Late tick: pose post-processing (IK) and anything that must see the
-        // physics-resolved transforms, whatever the component order.
-        for (const auto& e : entities_) {
+        // Advance navmesh dynamic-obstacle tile rebuilds + crowd steering once
+        // per frame, after agents (onUpdate) posted their targets and before
+        // the late tick reads back crowd-adjusted positions.
+        if (nav.valid()) nav.update(dt, *this);
+
+        // Late tick: pose post-processing (IK), crowd-agent readback, and
+        // anything that must see the physics-resolved transforms, whatever the
+        // component order.
+        for (size_t i = 0; i < entities_.size(); ++i) { // may still grow (see above)
+            Entity* e = entities_[i].get();
             if (!e->active_ || e->pendingDestroy_) continue;
-            for (const auto& c : e->components_)
-                if (c->started_) c->onLateUpdate(dt);
+            for (size_t ci = 0; ci < e->components_.size(); ++ci)
+                if (e->components_[ci]->started_) e->components_[ci]->onLateUpdate(dt);
         }
 
         // UI button events posted during last frame's HUD draw were visible to
@@ -161,8 +184,9 @@ void World::update(float dt, float time, const Input& input, bool tickBehaviors)
     // above) is reflected before rendering.
     recomputeTransforms();
 
-    // Sweep destroyed entities. Detach from parents first, then drop; children
-    // of a destroyed entity are orphaned to the root (kept simple on purpose).
+    // Sweep destroyed entities. Detach from parents first, then drop. destroy()
+    // already marked every descendant, so the remaining orphan-to-root step
+    // only ever fires for a child that was reparented out mid-frame.
     bool anyDead = false;
     for (const auto& e : entities_)
         if (e->pendingDestroy_) { anyDead = true; break; }
@@ -186,6 +210,10 @@ void World::buildRenderScene(RenderScene& out) {
     out.clear();
     out.sunDir = env.sunDir;
     out.skyIntensity = env.skyIntensity;
+    out.fogDensity = env.fogDensity;
+    out.fogHeightFalloff = env.fogHeightFalloff;
+    out.fogColor = env.fogColor;
+    out.volumetricIntensity = env.volumetricIntensity;
     cameraShots_.clear();
     for (const auto& e : entities_) {
         if (!e->active_) continue;

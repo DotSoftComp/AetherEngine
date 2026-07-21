@@ -21,6 +21,10 @@ struct Material {
     float roughness = 0.5f;
     Vec3 emissive{0, 0, 0};        // factor; multiplies emissiveTex when present
     float uvScale = 1.0f;
+    // Derive UVs from world position instead of the mesh's own UVs (uvScale
+    // then reads as tiles-per-metre). For level geometry made of stretched
+    // primitives, where per-face 0..1 UVs would smear the texture.
+    bool worldUV = false;
 
     // Optional textures as opaque rhi ids (0 = unused; bind via
     // rhi::bindTexture). Factors multiply texture values (glTF).
@@ -113,6 +117,17 @@ struct RenderScene {
     std::vector<ParticleBatch> particles;
     Vec3 sunDir = normalize(Vec3(0.35f, 0.55f, 0.25f)); // towards the sun
     float skyIntensity = 22.0f;
+
+    // Atmosphere, per scene. A sealed tech base and the inside of a volcano
+    // want completely different air, and that is a property of the level, not
+    // of the renderer. Negative = keep the renderer's default.
+    float fogDensity = -1.0f;
+    float fogHeightFalloff = -1.0f;
+    Vec3 fogColor{-1, -1, -1};   // negative = derive from the sky, as before
+    // Strength of the ray-marched volumetric medium (0 = off for this scene,
+    // negative = use the renderer's default). Shares the fog's density, colour
+    // and height falloff — this only scales how much light it scatters.
+    float volumetricIntensity = -1.0f;
 
     void clear() {
         entities.clear();

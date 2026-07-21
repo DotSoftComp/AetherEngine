@@ -219,7 +219,9 @@ GLenum glFormat(TexFormat f) {
     case TexFormat::BC1_SRGB: return GL_COMPRESSED_SRGB_S3TC_DXT1_EXT;
     case TexFormat::BC3: return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
     case TexFormat::BC3_SRGB: return GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT;
+    case TexFormat::BC5: return GL_COMPRESSED_RG_RGTC2;
     case TexFormat::R8: return GL_R8;
+    case TexFormat::R16F: return GL_R16F;
     case TexFormat::RG16F: return GL_RG16F;
     case TexFormat::RGBA16F: return GL_RGBA16F;
     case TexFormat::R11G11B10F: return GL_R11F_G11F_B10F;
@@ -247,6 +249,16 @@ TextureHandle createTextureCube(int size, int mipLevels, TexFormat format) {
     t.internalFormat = glFormat(format);
     glTextureStorage2D(t.tex, mipLevels, t.internalFormat, size, size);
     return {slot};
+}
+
+void recreateTexture2D(TextureHandle h, int width, int height, int mipLevels, TexFormat format) {
+    if (!h.valid() || h.id >= textures().size()) return;
+    GLTexture& t = textures()[h.id];
+    if (t.tex) glDeleteTextures(1, &t.tex); // the id (slot) survives; the object doesn't
+    t.alive = true;
+    glCreateTextures(GL_TEXTURE_2D, 1, &t.tex);
+    t.internalFormat = glFormat(format);
+    glTextureStorage2D(t.tex, mipLevels, t.internalFormat, width, height);
 }
 
 TextureHandle createTexture2DArray(int width, int height, int layers, TexFormat format) {

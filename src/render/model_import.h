@@ -32,7 +32,8 @@ struct ModelBuild {
     }
 
     // Loads an image file into a Model-owned texture; 0 when missing/undecodable.
-    unsigned loadTexture(const std::string& path, bool srgb) {
+    // `normalMap` picks BC5; a `<path>.import.json` sidecar overrides either.
+    unsigned loadTexture(const std::string& path, bool srgb, bool normalMap = false) {
         if (path.empty()) return 0;
         std::ifstream f(path, std::ios::binary | std::ios::ate);
         if (!f) {
@@ -45,9 +46,13 @@ struct ModelBuild {
         f.read((char*)bytes.data(), (std::streamsize)size);
         ImageData img;
         if (!decodeImage(bytes.data(), bytes.size(), img)) return 0;
+        TextureImportSettings ts;
+        ts.srgb = normalMap ? false : srgb;
+        ts.normalMap = normalMap;
+        ts = loadImportSettings(path, ts);
         m.textures_.emplace_back();
-        m.textures_.back().createCompressed(img.width, img.height, img.rgba.data(), srgb,
-                                            contentHash64(bytes.data(), bytes.size()));
+        m.textures_.back().createImported(img.width, img.height, img.rgba.data(), ts,
+                                          contentHash64(bytes.data(), bytes.size()));
         return m.textures_.back().id();
     }
 
@@ -59,7 +64,7 @@ struct ModelBuild {
         bool first = true;
         for (size_t i = 0; i < meshData.size(); ++i) {
             computeTangents(meshData[i]);
-            m.meshes_[i].upload(meshData[i]);
+            m.meshes_[i].upload(meshData[i], /*dynamic=*/false, /*keepNavGeo=*/true);
             Vec3 mn = m.meshes_[i].boundsMin(), mx = m.meshes_[i].boundsMax();
             if (first) { m.boundsMin_ = mn; m.boundsMax_ = mx; first = false; }
             m.boundsMin_ = Vec3(std::min(m.boundsMin_.x, mn.x), std::min(m.boundsMin_.y, mn.y),

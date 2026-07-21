@@ -16,6 +16,8 @@
 #include "anim_graph.h"
 #include "anim_ik.h"
 #include "../ai/nav_agent.h"
+#include "../ai/nav_obstacle.h"
+#include "../ai/behavior_tree.h"
 #include "../core/log.h"
 #include <algorithm>
 
@@ -136,9 +138,14 @@ static void declareEngineModules() {
                     r.add<AnimatorComponent>("Animator", "Animator", "Animation", id);
                     r.add<TwoBoneIKComponent>("TwoBoneIK", "Two-Bone IK", "Animation", id);
                 }});
-    em.declare({"ai", "AI Navigation", "Recast navmesh + NavAgent pathfinding", 0, true,
+    em.declare({"ai", "AI Navigation",
+                "Recast tile-cache navmesh + NavAgent/crowd, dynamic obstacles, behavior trees",
+                0, true,
                 [](ComponentRegistry& r, int id) {
                     r.add<NavAgentComponent>("NavAgent", "Nav Agent", "AI", id);
+                    r.add<NavObstacleComponent>("NavObstacle", "Nav Obstacle", "AI", id);
+                    r.add<BehaviorTreeComponent>("BehaviorTree", "Behavior Tree", "AI", id);
+                    r.add<PerceptionComponent>("Perception", "Perception", "AI", id);
                 }});
     em.declare({"narrative", "Narrative", "Dialogue scenes, QTEs, choice UI", 0, true,
                 [](ComponentRegistry& r, int id) {

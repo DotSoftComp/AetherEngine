@@ -49,6 +49,25 @@ bool Project::load(const std::string& pathOrDir) {
     file = ec ? projFile : abs.string();
     root = parentPath(file);
 
+    // Keep the settings object as text: the packager copies it forward and
+    // the runtime parses it, so nothing here needs to know its schema.
+    settingsJson.clear();
+    if (const JsonValue* st = doc.find("settings")) {
+        size_t open = text.find("\"settings\"");
+        if (open != std::string::npos) {
+            size_t brace = text.find('{', open);
+            int depth = 0;
+            for (size_t i = brace; i < text.size() && brace != std::string::npos; ++i) {
+                if (text[i] == '{') ++depth;
+                else if (text[i] == '}' && --depth == 0) {
+                    settingsJson = text.substr(brace, i - brace + 1);
+                    break;
+                }
+            }
+        }
+        (void)st;
+    }
+
     name = doc.string("name") ? *doc.string("name") : "Untitled";
     engineVersion = doc.string("engineVersion") ? *doc.string("engineVersion") : "";
     startupScene = doc.string("startupScene") ? *doc.string("startupScene") : "";

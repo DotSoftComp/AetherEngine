@@ -15,6 +15,8 @@
 
 namespace ae {
 
+struct JsonValue;
+
 class AssetLibrary {
 public:
     // Builds the procedural meshes ("sphere","cube","plane","torus") and
@@ -25,6 +27,9 @@ public:
     const std::string& projectRoot() const { return root_; }
 
     Mesh* mesh(const std::string& name);
+    // A built-in name ("tile", "rust") or a project-relative `.texset.json`
+    // naming albedo/normal/orm images — the path form is how a project ships
+    // its own surfaces. Loaded lazily and cached; nullptr if it can't be read.
     const MaterialTextures* textureSet(const std::string& name);
     // Accepts a project-relative ("assets/Fox.glb") or absolute path.
     // Returns nullptr if the file can't be loaded.
@@ -52,7 +57,31 @@ public:
     std::string resolvePath(const std::string& maybeRelative) const;
     std::string toProjectRelative(const std::string& absolute) const;
 
+    // ---- dependency tracking / hot re-import ----
+    // Every imported asset records the source files it was built from (the
+    // image, and for material graphs the .json + each texture it samples).
+    // pollSourceChanges() stats those files and re-imports whatever changed,
+    // in place — re-imported textures keep their rhi id, so live materials and
+    // UI documents pick the new pixels up with no rebinding. Returns the number
+    // of assets reloaded. The editor calls this on a timer; safe to call every
+    // frame (it throttles internally).
+    int pollSourceChanges();
+
 private:
+    // What to re-run when a tracked source file changes on disk.
+    enum class DepKind { UIImage, MaterialGraph };
+    struct SourceDep {
+        DepKind kind;
+        std::string owner;   // asset key (uiImages_ / matGraphs_ map key)
+        int64_t stamp = 0;   // last-seen write time (0 = missing)
+    };
+    // source file (absolute) -> the assets built from it.
+    std::map<std::string, std::vector<SourceDep>> deps_;
+    void trackSource(const std::string& absSource, DepKind kind, const std::string& owner);
+    bool loadTexSetChannel(Texture2D& out, const JsonValue& set, const char* key, bool srgb,
+                           bool normalMap);
+    double lastPoll_ = 0.0;
+
     std::string root_;
     std::map<std::string, Mesh> meshes_;
     std::map<std::string, MaterialTextures> texSets_;

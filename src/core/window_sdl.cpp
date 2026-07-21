@@ -1,4 +1,5 @@
 #include "window_sdl.h"
+#include "log.h"
 #include "../gl/gl_api.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
@@ -127,6 +128,12 @@ bool Window::poll() {
         }
     }
     return !shouldClose_;
+}
+
+void Window::setMouseCapture(bool captured) {
+    if (!window_ || captured == mouseCaptured_) return;
+    mouseCaptured_ = captured;
+    SDL_SetWindowRelativeMouseMode(window_, captured);
 }
 
 void Window::swapBuffers() { SDL_GL_SwapWindow(window_); }

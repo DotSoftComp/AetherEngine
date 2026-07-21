@@ -47,10 +47,21 @@ static std::string substitute(const std::string& text,
     return out;
 }
 
-void uiFocusables(const UIWidget& w, std::vector<std::string>& out) {
-    if (!w.visible) return;
+bool uiWidgetShown(const UIWidget& w, const std::function<int(const std::string&)>& flagValue) {
+    if (!w.visible) return false;
+    if (w.showIfFlag.empty()) return true;
+    if (!flagValue) return true; // no flag source (designer preview): show it
+    int v = flagValue(w.showIfFlag);
+    return w.hasShowIfValue ? v == (int)w.showIfValue : v != 0;
+}
+
+void uiFocusables(const UIWidget& w, std::vector<std::string>& out,
+                  const std::function<int(const std::string&)>& flagValue) {
+    // A conditionally hidden button must not be focusable, or menu navigation
+    // stops on entries the player cannot see.
+    if (!uiWidgetShown(w, flagValue)) return;
     if (w.type == "Button" && !w.id.empty()) out.push_back(w.id);
-    for (const auto& c : w.children) uiFocusables(c, out);
+    for (const auto& c : w.children) uiFocusables(c, out, flagValue);
 }
 
 static void drawWidget(UI& ui, const UIWidget& w, const Rect& parent,
@@ -58,7 +69,7 @@ static void drawWidget(UI& ui, const UIWidget& w, const Rect& parent,
                        std::vector<std::string>* clickedOut,
                        const std::function<unsigned(const std::string&)>& imageResolver,
                        const std::string* focusedId, bool isRoot = false) {
-    if (!w.visible) return;
+    if (!uiWidgetShown(w, flagValue)) return;
     // The root IS the screen: it always spans the full area so child anchors
     // (0..1) reference the real resolution.
     Rect r = isRoot ? parent : uiWidgetRect(w, parent);
@@ -142,6 +153,8 @@ static void writeWidget(std::ostringstream& o, const UIWidget& w, int depth) {
     if (w.barMax != 1.0f) o << ", \"barMax\": " << w.barMax;
     if (!w.image.empty()) o << ", \"image\": \"" << esc(w.image) << "\"";
     if (w.fontScale != 1.0f) o << ", \"fontScale\": " << w.fontScale;
+    if (!w.showIfFlag.empty()) o << ", \"showIfFlag\": \"" << esc(w.showIfFlag) << "\"";
+    if (w.hasShowIfValue) o << ", \"showIfValue\": " << w.showIfValue;
     if (!w.children.empty()) {
         o << ",\n" << ind << "  \"children\": [\n";
         for (size_t i = 0; i < w.children.size(); ++i) {
@@ -194,6 +207,11 @@ static void readWidget(const JsonValue& j, UIWidget& w) {
     w.barMax = (float)j.num("barMax", 1.0);
     if (const std::string* s = j.string("image")) w.image = *s;
     w.fontScale = (float)j.num("fontScale", 1.0);
+    if (const std::string* s = j.string("showIfFlag")) w.showIfFlag = *s;
+    if (const JsonValue* v = j.find("showIfValue")) {
+        w.hasShowIfValue = v->type == JsonValue::Number;
+        w.showIfValue = (float)v->number;
+    }
     if (const JsonValue* kids = j.find("children")) {
         for (size_t i = 0; i < kids->size(); ++i) {
             UIWidget c;

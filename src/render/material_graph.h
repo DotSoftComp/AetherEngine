@@ -103,6 +103,9 @@ struct MaterialGraphAsset {
     bool blend = false;                  // Output node's "Transparent" flag
     bool valid = false;
     std::string path;                    // absolute source path (for reload)
+    // Every absolute file this compile read: the graph, each inlined subgraph,
+    // each texture. The AssetLibrary watches these for hot re-import.
+    std::vector<std::string> sources;
 
     // (Re)generates GLSL, compiles the shader, loads textures. Requires a GL
     // context. Returns valid.
@@ -110,11 +113,22 @@ struct MaterialGraphAsset {
 };
 
 // ---- codegen output -------------------------------------------------------------
+// One texture slot the graph needs. `normalMap` slots import as BC5.
+struct MGTextureRef {
+    std::string path;
+    bool srgb = false;
+    bool normalMap = false;
+    bool operator==(const MGTextureRef& o) const {
+        return path == o.path && srgb == o.srgb && normalMap == o.normalMap;
+    }
+};
+
 struct MGGenerated {
     std::string decls;      // file-scope declarations (samplers + helpers)
     std::string code;       // main-body block filling the PBR inputs
     std::string normalCode; // TBN application ("" = keep the geometric normal)
-    std::vector<std::pair<std::string, bool>> textures; // path, srgb
+    std::vector<MGTextureRef> textures;
+    std::vector<std::string> subgraphs; // project-relative paths inlined (deps)
 };
 
 // Loads a subgraph referenced by a Subgraph node (project-relative path).

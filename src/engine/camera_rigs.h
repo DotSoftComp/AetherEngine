@@ -100,6 +100,10 @@ public:
 
     void onUpdate(float) override {
         const Input& in = world().input();
+        // Free mouse-look owns the pointer: the host hides and locks the cursor
+        // while this rig is driving, or the pointer walks off the screen edge
+        // and the camera stops turning half-way through a look.
+        world().requestMouseLook();
         yaw += in.mouseDX * lookSens;
         pitch = clampf(pitch - in.mouseDY * lookSens, minPitch, maxPitch);
 

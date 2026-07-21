@@ -35,6 +35,7 @@ enum class PropKind {
     MaterialGraphPath, // string: path input + "Open in Material Graph"
     UIDocPath,         // string: path input + "Open in UI Designer"
     AnimGraphPath,     // string: path input + "Open in Anim Graph"
+    BehaviorTreePath,  // string: path input + "Open in Behavior Tree"
     AudioClip,         // string: drop-target for a .wav from the Content Browser
     CameraDefaultFlag, // bool: exclusive default-camera checkbox
     Multiline,         // string: multiline text box

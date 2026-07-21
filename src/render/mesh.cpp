@@ -145,8 +145,80 @@ MeshData makeTorus(float R, float r, int majorSegs, int minorSegs) {
     return m;
 }
 
-void Mesh::upload(const MeshData& data, bool dynamic) {
+MeshData makeCylinder(float radius, float halfHeight, int segments) {
+    MeshData m;
+    // Side: a ring pair, seam duplicated so U runs 0..1 without wrapping.
+    for (int i = 0; i <= segments; ++i) {
+        float u = (float)i / segments;
+        float a = u * 2.0f * PI;
+        Vec3 n(std::cos(a), 0.0f, std::sin(a));
+        for (int j = 0; j < 2; ++j) {
+            Vertex v;
+            v.position = Vec3(n.x * radius, j ? halfHeight : -halfHeight, n.z * radius);
+            v.normal = n;
+            v.uv = Vec2(u, j ? 1.0f : 0.0f);
+            m.vertices.push_back(v);
+        }
+    }
+    for (int i = 0; i < segments; ++i) {
+        uint32_t a = (uint32_t)i * 2;
+        m.indices.insert(m.indices.end(), {a, a + 1, a + 3, a, a + 3, a + 2});
+    }
+    // Caps: one center vertex per end plus a fan (flat normals, so the rim
+    // stays a hard edge instead of smearing the side's normals over the top).
+    for (int cap = 0; cap < 2; ++cap) {
+        float y = cap ? halfHeight : -halfHeight;
+        Vec3 n(0.0f, cap ? 1.0f : -1.0f, 0.0f);
+        uint32_t center = (uint32_t)m.vertices.size();
+        Vertex c;
+        c.position = Vec3(0, y, 0);
+        c.normal = n;
+        c.uv = Vec2(0.5f, 0.5f);
+        m.vertices.push_back(c);
+        for (int i = 0; i <= segments; ++i) {
+            float a = (float)i / segments * 2.0f * PI;
+            Vertex v;
+            v.position = Vec3(std::cos(a) * radius, y, std::sin(a) * radius);
+            v.normal = n;
+            v.uv = Vec2(std::cos(a) * 0.5f + 0.5f, std::sin(a) * 0.5f + 0.5f);
+            m.vertices.push_back(v);
+        }
+        for (int i = 0; i < segments; ++i) {
+            uint32_t a = center + 1 + i, b = center + 2 + i;
+            if (cap) m.indices.insert(m.indices.end(), {center, a, b});
+            else m.indices.insert(m.indices.end(), {center, b, a}); // flip winding
+        }
+    }
+    computeTangents(m);
+    return m;
+}
+
+MeshData makeQuad(float halfExtent) {
+    MeshData m;
+    // Faces +Z, centered on the origin: the billboard/decal/poster primitive.
+    const Vec2 corners[4] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+    for (const Vec2& c : corners) {
+        Vertex v;
+        v.position = Vec3(c.x * halfExtent, c.y * halfExtent, 0.0f);
+        v.normal = Vec3(0, 0, 1);
+        v.tangent = Vec4(Vec3(1, 0, 0), 1.0f);
+        v.uv = Vec2(c.x * 0.5f + 0.5f, 0.5f - c.y * 0.5f); // v down = image order
+        m.vertices.push_back(v);
+    }
+    m.indices = {0, 1, 2, 0, 2, 3};
+    computeTangents(m);
+    return m;
+}
+
+void Mesh::upload(const MeshData& data, bool dynamic, bool keepNavGeo) {
     indexCount_ = (unsigned)data.indices.size();
+
+    if (keepNavGeo) {
+        navPositions_.resize(data.vertices.size());
+        for (size_t i = 0; i < data.vertices.size(); ++i)
+            navPositions_[i] = data.vertices[i].position;
+        navIndices_ = data.indices;
+    }
 
     if (!data.vertices.empty()) {
         boundsMin_ = boundsMax_ = data.vertices[0].position;

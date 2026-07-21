@@ -41,7 +41,12 @@ public:
     void step(World& world, float dt);
 
     // Closest collider hit by the ray, ignoring triggers/sensors.
-    RayHit raycast(World& world, const Vec3& origin, const Vec3& dir, float maxDist) const;
+    // `ignore` skips one entity's body — pass the shooter. Almost every ray a
+    // game casts starts inside the thing casting it (a weapon at the player's
+    // eye, a monster's line-of-sight check from its own head), and without
+    // this it just hits itself.
+    RayHit raycast(World& world, const Vec3& origin, const Vec3& dir, float maxDist,
+                   const Entity* ignore = nullptr) const;
 
     // Drops every body (scene reload / File > New). Safe to call repeatedly.
     void clear();

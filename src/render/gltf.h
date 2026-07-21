@@ -109,6 +109,12 @@ public:
     // their meshes and palettes).
     void emit(RenderScene& out, const Mat4& base, const ModelPose* pose = nullptr) const;
 
+    // Appends world-space bind-pose triangles (into the flat `verts`/`tris`
+    // Recast layout) for navmesh baking. `base` is the owning entity's world
+    // matrix. Uses retained CPU geometry (keepNavGeo at load).
+    void collectNavTriangles(const Mat4& base, std::vector<float>& verts,
+                             std::vector<int>& tris) const;
+
     // Local-space AABB of the bind pose (for framing / bounds).
     Vec3 boundsMin() const { return boundsMin_; }
     Vec3 boundsMax() const { return boundsMax_; }

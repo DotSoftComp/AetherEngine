@@ -40,8 +40,9 @@ public:
         // ---- focus navigation: Down/Tab/DpadDown next, Up/DpadUp prev,
         //      Enter/Space/A activate. Focus is only claimed once nav is used
         //      (so mouse-only games are unaffected). ----
+        auto flagValue = [&w](const std::string& f) { return w.missions.flag(f); };
         std::vector<std::string> focusables;
-        uiFocusables(doc_.root, focusables);
+        uiFocusables(doc_.root, focusables, flagValue);
         const std::string* focusedId = nullptr;
         if (!focusables.empty()) {
             const Input& in = w.input();
@@ -60,8 +61,8 @@ public:
 
         AssetLibrary* assets = assets_;
         drawUIDocument(
-            ui, doc_.root, area, [&w](const std::string& f) { return w.missions.flag(f); },
-            &clicked, [assets](const std::string& p) { return assets ? assets->uiImage(p) : 0u; },
+            ui, doc_.root, area, flagValue, &clicked,
+            [assets](const std::string& p) { return assets ? assets->uiImage(p) : 0u; },
             focusedId);
         for (const auto& id : clicked) w.postUIEvent(id);
     }

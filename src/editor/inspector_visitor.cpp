@@ -127,6 +127,25 @@ void ImGuiInspectorVisitor::visit(const char* key, std::string& v, const PropMet
         }
         break;
     }
+    case PropKind::BehaviorTreePath: {
+        // JSON-authorable (no canvas editor): path field + Content-Browser drop.
+        char buf[260];
+        std::snprintf(buf, sizeof(buf), "%s", v.c_str());
+        if (ImGui::InputText(label, buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            v = buf;
+            assetsDirty_ = true;
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("AE_ASSET_PATH")) {
+                std::string rel((const char*)p->Data, p->DataSize);
+                bool isJson =
+                    rel.size() >= 5 && _stricmp(rel.c_str() + rel.size() - 5, ".json") == 0;
+                if (isJson) { v = rel; assetsDirty_ = true; }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        break;
+    }
     case PropKind::UIDocPath: {
         char buf[260];
         std::snprintf(buf, sizeof(buf), "%s", v.c_str());

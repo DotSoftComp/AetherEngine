@@ -25,6 +25,39 @@ struct RenderSettings {
     float bloomStrength = 0.06f;
     float fogDensity = 0.008f;
     float fogHeightFalloff = 0.10f;
+    // Volumetric lighting: ray-marched in-scattering that is actually shadowed,
+    // so a lamp casts a visible cone and a doorway throws a shaft. Replaces the
+    // analytic height fog when on (they model the same medium; running both
+    // double-counts it). Steps trade cost against banding — the march is
+    // dithered per pixel and half-res, so TAA cleans up what is left.
+    bool volumetric = true;
+    int volumetricSteps = 28;
+    float volumetricIntensity = 1.0f;
+    float volumetricAnisotropy = 0.62f; // Henyey-Greenstein g (forward scatter)
+    float volumetricMaxDistance = 140.0f;
+
+    // Screen-space reflections: marches the mirror ray through the depth buffer
+    // and blends what the screen shows over the environment probe. Only worth
+    // running below maxRoughness — a blurry lobe cannot be traced honestly in
+    // screen space, and the probe already looks right there.
+    bool ssr = true;
+    int ssrSteps = 32;
+    int ssrRefineSteps = 5;
+    float ssrMaxRoughness = 0.48f;
+    float ssrMaxDistance = 34.0f;  // view-space metres
+    float ssrThickness = 1.1f;     // depth tolerance for "the ray is behind this"
+    float ssrStrength = 1.0f;
+    // Auto-exposure: measure the frame's log-average luminance and adapt the
+    // exposure toward a middle-grey key, so a scene stays readable walking from
+    // sunlight into a cave with no per-level tuning. `exposure` then acts as a
+    // relative bias instead of an absolute multiplier.
+    bool autoExposure = false;
+    float autoExposureSpeedUp = 3.0f;   // adaptation rate when brightening
+    float autoExposureSpeedDown = 1.0f; // slower when darkening (like an eye)
+    // Temporal anti-aliasing: sub-pixel jitter + reprojected history. Cleans up
+    // geometry edges and specular shimmer far better than FXAA alone (which
+    // still runs after it).
+    bool taa = true;
     bool vsync = true;
     bool frustumCulling = true; // camera-frustum AABB culling in the geometry pass
     // Batches identical (mesh, material) draws into one instanced call (also
@@ -61,12 +94,12 @@ struct FrameStats {
 
     // Per-pass GPU milliseconds, filled when RenderSettings::profileGpu.
     enum Pass { PassEnv, PassShadow, PassGeom, PassSsao, PassComposite, PassForward,
-                PassBloom, PassTonemap, PassFxaa, PassCount };
+                PassTaa, PassBloom, PassTonemap, PassFxaa, PassCount };
     float msPass[PassCount] = {};
     static const char* passName(int i) {
         static const char* names[PassCount] = {"env",   "shadow", "geometry", "ssao",
-                                               "composite", "forward", "bloom", "tonemap",
-                                               "fxaa"};
+                                               "composite", "forward", "taa", "bloom",
+                                               "tonemap", "fxaa"};
         return names[i];
     }
 };
@@ -120,6 +153,12 @@ private:
     void pointShadowPass(const RenderScene& scene, const Camera& camera);
     void geometryPass(const RenderScene& scene, const Camera& camera);
     void ssaoPass(const Camera& camera);
+    // Half-res ray-marched in-scattering (sun + local lights), consumed by the
+    // composite pass through a depth-aware upsample.
+    void volumetricPass(const RenderScene& scene, const Camera& camera);
+    // Half-res mirror-ray march + a full-res resolve that blends it over the
+    // environment probe already present in the frame.
+    void ssrPass(const Camera& camera);
     void compositePass(const RenderScene& scene, const Camera& camera);
     // Alpha-blended surfaces, drawn forward into the HDR buffer after composite:
     // depth-tested against the opaque depth (no write), sorted back-to-front.
@@ -130,9 +169,21 @@ private:
     // Draws + clears the global debug-draw line collector (colliders, gizmos,
     // gameplay debug) as a translucent X-ray overlay into the HDR buffer.
     void debugPass(const Camera& camera);
+    // Reduces the HDR frame to a 1x1 log-average luminance and adapts it
+    // toward that target over time (ping-ponged, so it survives frames).
+    void autoExposurePass(float dt);
+    // Resolves hdrTex_ + the history buffer into taaTex_, then swaps it in as
+    // the HDR image the rest of the chain reads.
+    void taaPass(const Camera& camera);
     void bloomPass();
     void tonemapPass(float time);
     void fxaaPass();
+
+    // Sub-pixel projection jitter for TAA (Halton 2,3), in NDC. Zero when TAA
+    // is off. Every pass must use the SAME projection, so they all go through
+    // projFor() rather than calling camera.proj() directly.
+    Vec2 jitterNDC() const;
+    Mat4 projFor(const Camera& camera) const;
 
     // Sets the per-draw PBR uniforms/textures and issues the draw. Shared by
     // the geometry (deferred MRT) and forward (blended) passes; `culling`
@@ -157,9 +208,10 @@ private:
     // Shaders
     Shader shPBR_, shShadow_, shPointDepth_, shSkyCapture_, shBackground_;
     Shader shIrradiance_, shPrefilter_, shBrdf_, shSkinLUT_;
-    Shader shSSAO_, shSSAOBlur_, shComposite_;
+    Shader shSSAO_, shSSAOBlur_, shVolumetric_, shSSR_, shSSRResolve_, shComposite_;
     Shader shBloomDown_, shBloomUp_, shTonemap_, shFXAA_;
     Shader shParticle_, shDebug_;
+    Shader shLumDown_, shLumAdapt_, shTAA_;
 
     // Particle billboards (dynamic vertex stream rebuilt per frame).
     rhi::StreamHandle particleStream_;
@@ -187,6 +239,22 @@ private:
     rhi::FramebufferHandle spotShadowFBO_;
     Mat4 spotShadowMat_[kMaxSpotShadows];
     int spotShadowCount_ = 0;
+    // The <= kMaxLights local lights actually shaded this frame, chosen by
+    // selectLights() from the whole scene. Every per-light array below is
+    // indexed against THIS list, not scene.lights.
+    std::vector<Light> activeLights_;
+    // This frame's resolved fog (scene override, else settings / sky-derived).
+    float sceneFogDensity_ = 0.008f;
+    float sceneFogFalloff_ = 0.10f;
+    Vec3 sceneFogColor_{0, 0, 0};
+    float sceneVolumetric_ = 1.0f; // resolved intensity (0 = off this frame)
+    rhi::TextureHandle volumetricTex_{};
+    rhi::FramebufferHandle volumetricFBO_{};
+    rhi::TextureHandle gSpecular_{};   // rgb = specular weight, a = roughness
+    rhi::TextureHandle ssrTex_{};      // half-res hit colour + confidence
+    rhi::FramebufferHandle ssrFBO_{};
+    void selectLights(const RenderScene& scene, const Camera& camera);
+
     int lightSpotLayer_[kMaxLights] = {}; // per-light spot layer, -1 = none
 
     // Local point-light shadows (linear-distance cubes, one per caster).
@@ -214,6 +282,29 @@ private:
     rhi::FramebufferHandle ldrFBO_;
     rhi::TextureHandle ldrTex_;
 
+    // Auto-exposure: a log-luminance reduction pyramid down to 1x1, plus a
+    // ping-ponged pair holding the adapted value across frames.
+    static constexpr int kLumMips = 8;
+    rhi::FramebufferHandle lumFBO_[kLumMips];
+    rhi::TextureHandle lumTex_[kLumMips];
+    int lumW_[kLumMips] = {}, lumH_[kLumMips] = {};
+    int lumMipCount_ = 0;
+    rhi::FramebufferHandle adaptFBO_[2];
+    rhi::TextureHandle adaptTex_[2];
+    int adaptCur_ = 0;
+    bool exposureReset_ = true;
+
+    // TAA: resolve target + last frame's resolved image, and the previous
+    // frame's (jittered) view-projection for reprojection.
+    rhi::FramebufferHandle taaFBO_, historyFBO_;
+    rhi::TextureHandle taaTex_, historyTex_;
+    Mat4 prevViewProj_ = Mat4::identity();
+    bool taaReset_ = true;
+    uint32_t frameIndex_ = 0;
+    // The HDR image downstream passes (auto-exposure, bloom, tonemap) read:
+    // hdrTex_ normally, or the TAA resolve when TAA ran.
+    rhi::TextureHandle hdrSource_;
+
     // Environment / IBL
     rhi::TextureHandle envCube_, irradianceCube_, prefilterCube_, brdfLUT_;
     rhi::FramebufferHandle captureFBO_;
@@ -231,6 +322,7 @@ private:
 
     // Frame-uniform bookkeeping across shader variants (see applyFrameUniforms).
     float frameTime_ = 0.0f;
+    float prevTime_ = 0.0f; // for the exposure-adaptation delta
     bool frameForward_ = false;              // forward pass: fog + uForwardPass=1
     std::vector<unsigned> preppedPrograms_;  // programs already prepped this pass
 };

@@ -243,7 +243,7 @@ bool Model::loadGltf(const char* path) {
     const JsonValue& doc = loader.doc;
 
     // ---- images (baseColor/emissive are sRGB) ----
-    std::unordered_set<int> srgbImages;
+    std::unordered_set<int> srgbImages, normalImages;
     const JsonValue* texturesJson = doc.find("textures");
     auto imageOfTexture = [&](int texIndex) -> int {
         if (!texturesJson || texIndex < 0 || (size_t)texIndex >= texturesJson->size()) return -1;
@@ -258,6 +258,9 @@ bool Model::loadGltf(const char* path) {
                     srgbImages.insert(imageOfTexture(t->integer("index", -1)));
             if (const JsonValue* t = m.find("emissiveTexture"))
                 srgbImages.insert(imageOfTexture(t->integer("index", -1)));
+            // Normal maps get BC5 (two-channel) instead of BC1/BC3.
+            if (const JsonValue* t = m.find("normalTexture"))
+                normalImages.insert(imageOfTexture(t->integer("index", -1)));
         }
     }
 
@@ -270,6 +273,7 @@ bool Model::loadGltf(const char* path) {
             std::vector<uint8_t> fileBytes;
             const uint8_t* bytes = nullptr;
             size_t size = 0;
+            std::string diskPath; // external images can carry an import sidecar
             int bvIndex = img.integer("bufferView", -1);
             if (bvIndex >= 0) {
                 if (!loader.bufferViewBytes(bvIndex, &bytes, &size)) continue;
@@ -278,9 +282,12 @@ bool Model::loadGltf(const char* path) {
                     size_t comma = uri->find(',');
                     if (comma == std::string::npos) continue;
                     fileBytes = base64Decode(uri->c_str() + comma + 1, uri->size() - comma - 1);
-                } else if (!readFile(loader.baseDir + *uri, fileBytes)) {
-                    std::fprintf(stderr, "[glTF] cannot read image %s\n", uri->c_str());
-                    continue;
+                } else {
+                    diskPath = loader.baseDir + *uri;
+                    if (!readFile(diskPath, fileBytes)) {
+                        std::fprintf(stderr, "[glTF] cannot read image %s\n", uri->c_str());
+                        continue;
+                    }
                 }
                 bytes = fileBytes.data();
                 size = fileBytes.size();
@@ -293,11 +300,16 @@ bool Model::loadGltf(const char* path) {
                 std::fprintf(stderr, "[glTF] image %zu decode failed\n", i);
                 continue;
             }
+            // glTF's own material slots imply srgb/normal; a sidecar next to an
+            // external image can still override (maxSize, mipBias, ...).
+            TextureImportSettings ts;
+            ts.srgb = srgbImages.count((int)i) != 0;
+            ts.normalMap = normalImages.count((int)i) != 0;
+            if (ts.normalMap) ts.srgb = false;
+            if (!diskPath.empty()) ts = loadImportSettings(diskPath, ts);
             textures_.emplace_back();
-            textures_.back().createCompressed(decoded.width, decoded.height,
-                                              decoded.rgba.data(),
-                                              srgbImages.count((int)i) != 0,
-                                              contentHash64(bytes, size));
+            textures_.back().createImported(decoded.width, decoded.height, decoded.rgba.data(),
+                                            ts, contentHash64(bytes, size));
             imageTex[i] = textures_.back().id();
         }
     }
@@ -423,7 +435,7 @@ bool Model::loadGltf(const char* path) {
                 const JsonValue* targetsJson = prim.find("targets");
                 bool hasTargets = targetsJson && targetsJson->size() > 0;
                 meshes_.emplace_back();
-                meshes_.back().upload(data, hasTargets);
+                meshes_.back().upload(data, hasTargets, /*keepNavGeo=*/true);
                 int engineMesh = (int)meshes_.size() - 1;
                 if (hasTargets) {
                     meshTargetCount[mi] =
@@ -860,6 +872,32 @@ void Model::finalizePose(ModelPose& p) const {
             mm.mesh.updateVertices(data.vertices);
         }
         mm.lastWeights = std::move(weights);
+    }
+}
+
+void Model::collectNavTriangles(const Mat4& base, std::vector<float>& verts,
+                                std::vector<int>& tris) const {
+    for (const Draw& d : draws_) {
+        const Mesh& mesh = meshes_[d.mesh];
+        const std::vector<Vec3>& pos = mesh.navPositions();
+        const std::vector<uint32_t>& idx = mesh.navIndices();
+        if (pos.empty() || idx.empty()) continue;
+        // Skinned draws already carry the pose in their palette; for nav we use
+        // the bind pose, so apply the node's model-space world (rigid draws) —
+        // skinned meshes are baked at base (their verts are bind-pose local).
+        Mat4 m = d.skin >= 0 ? base : base * nodes_[d.node].world;
+        int vbase = (int)(verts.size() / 3);
+        for (const Vec3& p : pos) {
+            Vec4 w = m * Vec4(p, 1.0f);
+            verts.push_back(w.x);
+            verts.push_back(w.y);
+            verts.push_back(w.z);
+        }
+        for (size_t i = 0; i + 2 < idx.size(); i += 3) {
+            tris.push_back(vbase + (int)idx[i]);
+            tris.push_back(vbase + (int)idx[i + 1]);
+            tris.push_back(vbase + (int)idx[i + 2]);
+        }
     }
 }
 

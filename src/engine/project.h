@@ -31,6 +31,10 @@ struct Project {
     // Optional engine-module toggles ("modules": {"physics": false, ...});
     // ids missing here stay at their default (enabled). Order preserved.
     std::vector<std::pair<std::string, bool>> moduleFlags;
+    // The manifest's optional "settings" object, verbatim (exposure, TAA,
+    // shadow budgets...). Carried through to a packaged game.json so a build
+    // looks exactly like the project did when run from source.
+    std::string settingsJson;
 
     bool hasModule() const { return !moduleName.empty(); }
 

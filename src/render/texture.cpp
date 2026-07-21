@@ -1,5 +1,6 @@
 #include "texture.h"
 #include "../core/math3d.h"
+#include "../core/json.h"
 #include "../core/log.h"
 #define STB_DXT_IMPLEMENTATION
 #define WIN32_LEAN_AND_MEAN
@@ -17,6 +18,7 @@ namespace ae {
 // ---- BC compression + disk cache -------------------------------------------
 namespace {
 std::string g_texCacheDir;
+int g_mipBias = 0;
 
 struct MipLevel {
     int w, h;
@@ -73,6 +75,54 @@ std::vector<uint8_t> compressLevel(const MipLevel& m, bool alpha) {
     return out;
 }
 
+// BC5: two independent BC4 channels (R = normal.x, G = normal.y). 16 B/block,
+// same size as BC3 but far cleaner for normals — BC1/BC3 quantize RGB jointly
+// through a 565 line fit, which mangles tangent-space directions.
+std::vector<uint8_t> compressLevelBC5(const MipLevel& m) {
+    int bw = (m.w + 3) / 4, bh = (m.h + 3) / 4;
+    std::vector<uint8_t> out((size_t)bw * bh * 16);
+    uint8_t block[16 * 2]; // RG pairs
+    for (int by = 0; by < bh; ++by) {
+        for (int bx = 0; bx < bw; ++bx) {
+            for (int py = 0; py < 4; ++py) {
+                int sy = std::min(by * 4 + py, m.h - 1);
+                for (int px = 0; px < 4; ++px) {
+                    int sx = std::min(bx * 4 + px, m.w - 1);
+                    const uint8_t* s = &m.rgba[((size_t)sy * m.w + sx) * 4];
+                    block[(py * 4 + px) * 2 + 0] = s[0];
+                    block[(py * 4 + px) * 2 + 1] = s[1];
+                }
+            }
+            stb_compress_bc5_block(&out[((size_t)by * bw + bx) * 16], block);
+        }
+    }
+    return out;
+}
+
+// Box-filtered half-step downscale, used to honour maxSize before encoding.
+MipLevel downscaleTo(int w, int h, const uint8_t* rgba, int maxSize) {
+    MipLevel cur{w, h, std::vector<uint8_t>(rgba, rgba + (size_t)w * h * 4)};
+    while (maxSize > 0 && (cur.w > maxSize || cur.h > maxSize) && (cur.w > 1 || cur.h > 1)) {
+        int nw = cur.w > 1 ? cur.w / 2 : 1, nh = cur.h > 1 ? cur.h / 2 : 1;
+        MipLevel dst{nw, nh, std::vector<uint8_t>((size_t)nw * nh * 4)};
+        for (int y = 0; y < nh; ++y) {
+            int sy0 = std::min(y * 2, cur.h - 1), sy1 = std::min(y * 2 + 1, cur.h - 1);
+            for (int x = 0; x < nw; ++x) {
+                int sx0 = std::min(x * 2, cur.w - 1), sx1 = std::min(x * 2 + 1, cur.w - 1);
+                for (int c = 0; c < 4; ++c) {
+                    int sum = cur.rgba[((size_t)sy0 * cur.w + sx0) * 4 + c] +
+                              cur.rgba[((size_t)sy0 * cur.w + sx1) * 4 + c] +
+                              cur.rgba[((size_t)sy1 * cur.w + sx0) * 4 + c] +
+                              cur.rgba[((size_t)sy1 * cur.w + sx1) * 4 + c];
+                    dst.rgba[((size_t)y * nw + x) * 4 + c] = (uint8_t)(sum / 4);
+                }
+            }
+        }
+        cur = std::move(dst);
+    }
+    return cur;
+}
+
 struct AetexHeader {
     char magic[4];      // "AETX"
     uint32_t version;   // 1
@@ -82,7 +132,8 @@ struct AetexHeader {
 
 // The .aetex format tag values (== the GL compressed-format enums they were
 // born as; kept verbatim so existing caches stay valid across backends).
-constexpr uint32_t kTagBC1 = 0x83F1, kTagBC1s = 0x8C4C, kTagBC3 = 0x83F3, kTagBC3s = 0x8C4F;
+constexpr uint32_t kTagBC1 = 0x83F1, kTagBC1s = 0x8C4C, kTagBC3 = 0x83F3, kTagBC3s = 0x8C4F,
+                   kTagBC5 = 0x8DBD;
 
 rhi::TexFormat tagToFormat(uint32_t tag) {
     switch (tag) {
@@ -90,19 +141,67 @@ rhi::TexFormat tagToFormat(uint32_t tag) {
     case kTagBC1s: return rhi::TexFormat::BC1_SRGB;
     case kTagBC3: return rhi::TexFormat::BC3;
     case kTagBC3s: return rhi::TexFormat::BC3_SRGB;
+    case kTagBC5: return rhi::TexFormat::BC5;
     }
     return rhi::TexFormat::BC1;
 }
 
-std::string cacheFileFor(uint64_t hash, bool srgb) {
+// Creates the GPU texture, reusing the handle's slot when it already has one
+// so a hot re-import keeps the same id (materials cache ids raw).
+void makeTexture(rhi::TextureHandle& h, int w, int hgt, int mips, rhi::TexFormat f) {
+    if (h.valid()) rhi::recreateTexture2D(h, w, hgt, mips, f);
+    else h = rhi::createTexture2D(w, hgt, mips, f);
+}
+
+std::string cacheFileFor(uint64_t hash) {
     if (g_texCacheDir.empty() || hash == 0) return "";
-    char name[32];
-    std::snprintf(name, sizeof(name), "%016llx%c.aetex", (unsigned long long)hash,
-                  srgb ? 's' : 'l');
+    char name[40];
+    std::snprintf(name, sizeof(name), "%016llx.aetex", (unsigned long long)hash);
     return g_texCacheDir + "/" + name;
 }
 
 } // namespace
+
+// Folds the import choices into the content hash so re-importing the same
+// bytes with different settings can't collide in the cache.
+uint64_t TextureImportSettings::hashInto(uint64_t contentHash) const {
+    uint64_t h = contentHash ? contentHash : 0;
+    if (!h) return 0; // caching disabled
+    auto mix = [&h](uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); };
+    mix(srgb ? 1 : 2);
+    mix(normalMap ? 3 : 4);
+    mix(compress ? 5 : 6);
+    mix((uint64_t)maxSize * 131 + 7);
+    mix((uint64_t)(mipBias + g_mipBias) * 17 + 9);
+    return h ? h : 1;
+}
+
+TextureImportSettings loadImportSettings(const std::string& imagePath,
+                                         TextureImportSettings fallback) {
+    std::string side = imagePath + ".import.json";
+    std::ifstream f(side, std::ios::binary | std::ios::ate);
+    if (!f) return fallback;
+    size_t size = (size_t)f.tellg();
+    f.seekg(0);
+    std::string text(size, '\0');
+    f.read(&text[0], (std::streamsize)size);
+    JsonValue root;
+    if (!jsonParse(text.c_str(), text.size(), root)) {
+        AE_WARN("[Tex] malformed import sidecar: %s", side.c_str());
+        return fallback;
+    }
+    TextureImportSettings s = fallback;
+    s.srgb = root.flag("srgb", s.srgb);
+    s.normalMap = root.flag("normalMap", s.normalMap);
+    s.compress = root.flag("compress", s.compress);
+    s.maxSize = root.integer("maxSize", s.maxSize);
+    s.mipBias = root.integer("mipBias", s.mipBias);
+    if (s.normalMap) s.srgb = false; // normals are data, never sRGB
+    return s;
+}
+
+void setTextureMipBias(int bias) { g_mipBias = bias < 0 ? 0 : bias; }
+int textureMipBias() { return g_mipBias; }
 
 void setTextureCacheDir(const std::string& dir) {
     g_texCacheDir = dir;
@@ -125,22 +224,42 @@ uint64_t contentHash64(const uint8_t* data, size_t size) {
 
 void Texture2D::createCompressed(int w, int h, const uint8_t* rgba, bool srgb,
                                  uint64_t contentHash) {
-    // Tiny textures gain nothing from block compression.
-    if (w < 8 || h < 8) {
-        create(w, h, rgba, srgb);
+    TextureImportSettings s;
+    s.srgb = srgb;
+    createImported(w, h, rgba, s, contentHash);
+}
+
+void Texture2D::createImported(int w, int h, const uint8_t* rgba,
+                               const TextureImportSettings& s, uint64_t contentHash) {
+    bc5_ = false;
+
+    // maxSize: downscale the source before anything else.
+    MipLevel src = downscaleTo(w, h, rgba, s.maxSize);
+    w = src.w;
+    h = src.h;
+    rgba = src.rgba.data();
+
+    // Tiny textures (and opt-outs) gain nothing from block compression.
+    if (!s.compress || w < 8 || h < 8) {
+        create(w, h, rgba, s.srgb);
         return;
     }
 
+    const int dropMips = s.mipBias + g_mipBias;
+
     // ---- cache hit: upload the pre-encoded blob directly ----
-    std::string cacheFile = cacheFileFor(contentHash, srgb);
+    std::string cacheFile = cacheFileFor(s.hashInto(contentHash));
     if (!cacheFile.empty()) {
         std::ifstream f(cacheFile, std::ios::binary);
         AetexHeader hd{};
         if (f && f.read((char*)&hd, sizeof(hd)) && !std::memcmp(hd.magic, "AETX", 4) &&
             hd.version == 1) {
-            tex_ = rhi::createTexture2D(hd.w, hd.h, hd.mips, tagToFormat(hd.glFormat));
+            // Streaming budget: skip the `dropMips` biggest levels and upload
+            // the rest as a smaller texture (the cache blob keeps every level,
+            // so raising the budget later costs no re-encode).
+            int skip = std::min(dropMips, hd.mips - 1);
             std::vector<uint8_t> blob;
-            bool ok = true;
+            bool ok = true, created = false;
             for (int l = 0; l < hd.mips && ok; ++l) {
                 int32_t dims[2];
                 uint32_t bytes = 0;
@@ -149,11 +268,17 @@ void Texture2D::createCompressed(int w, int h, const uint8_t* rgba, bool srgb,
                 blob.resize(bytes);
                 f.read((char*)blob.data(), bytes);
                 ok = f.good();
-                if (ok)
-                    rhi::uploadTexture2DCompressed(tex_, l, dims[0], dims[1], bytes,
-                                                   blob.data());
+                if (!ok || l < skip) continue;
+                if (!created) {
+                    makeTexture(tex_, dims[0], dims[1], hd.mips - skip,
+                                tagToFormat(hd.glFormat));
+                    created = true;
+                }
+                rhi::uploadTexture2DCompressed(tex_, l - skip, dims[0], dims[1], bytes,
+                                               blob.data());
             }
-            if (ok) {
+            if (ok && created) {
+                bc5_ = hd.glFormat == kTagBC5;
                 rhi::SamplerDesc smp;
                 smp.anisotropy = 8.0f;
                 rhi::setSampler(tex_, smp);
@@ -163,36 +288,42 @@ void Texture2D::createCompressed(int w, int h, const uint8_t* rgba, bool srgb,
         }
     }
 
-    // ---- encode: alpha scan picks BC1 (opaque) vs BC3 ----
+    // ---- encode: normal maps use BC5; else an alpha scan picks BC1 vs BC3 ----
     LARGE_INTEGER freq, t0, t1;
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&t0);
 
     bool alpha = false;
-    for (size_t i = 3; i < (size_t)w * h * 4; i += 4)
-        if (rgba[i] < 250) { alpha = true; break; }
-    uint32_t fmt = alpha ? (srgb ? kTagBC3s : kTagBC3) : (srgb ? kTagBC1s : kTagBC1);
+    if (!s.normalMap)
+        for (size_t i = 3; i < (size_t)w * h * 4; i += 4)
+            if (rgba[i] < 250) { alpha = true; break; }
+    uint32_t fmt = s.normalMap ? kTagBC5
+                              : alpha ? (s.srgb ? kTagBC3s : kTagBC3)
+                                      : (s.srgb ? kTagBC1s : kTagBC1);
 
     std::vector<MipLevel> mips = buildMips(w, h, rgba);
     std::vector<std::vector<uint8_t>> levels;
     size_t totalBytes = 0;
     for (const auto& m : mips) {
-        levels.push_back(compressLevel(m, alpha));
+        levels.push_back(s.normalMap ? compressLevelBC5(m) : compressLevel(m, alpha));
         totalBytes += levels.back().size();
     }
 
-    tex_ = rhi::createTexture2D(w, h, (int)mips.size(), tagToFormat(fmt));
-    for (size_t l = 0; l < mips.size(); ++l)
-        rhi::uploadTexture2DCompressed(tex_, (int)l, mips[l].w, mips[l].h,
+    int skip = std::min(dropMips, (int)mips.size() - 1);
+    makeTexture(tex_, mips[skip].w, mips[skip].h, (int)mips.size() - skip, tagToFormat(fmt));
+    for (size_t l = skip; l < mips.size(); ++l)
+        rhi::uploadTexture2DCompressed(tex_, (int)l - skip, mips[l].w, mips[l].h,
                                        levels[l].size(), levels[l].data());
+    bc5_ = s.normalMap;
     rhi::SamplerDesc smp;
     smp.anisotropy = 8.0f;
     rhi::setSampler(tex_, smp);
 
     QueryPerformanceCounter(&t1);
     double ms = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / freq.QuadPart;
-    AE_LOG("[Tex] %dx%d -> %s %.0f KB (rgba+mips %.0f KB, encode %.0f ms)", w, h,
-           alpha ? "BC3" : "BC1", totalBytes / 1024.0, (double)w * h * 4 * 1.33 / 1024.0, ms);
+    AE_LOG("[Tex] %dx%d -> %s %.0f KB (rgba+mips %.0f KB, encode %.0f ms)%s", w, h,
+           s.normalMap ? "BC5" : alpha ? "BC3" : "BC1", totalBytes / 1024.0,
+           (double)w * h * 4 * 1.33 / 1024.0, ms, skip ? " [mip-biased]" : "");
 
     // ---- write the cache blob ----
     if (!cacheFile.empty()) {
@@ -213,8 +344,8 @@ void Texture2D::createCompressed(int w, int h, const uint8_t* rgba, bool srgb,
 
 void Texture2D::create(int w, int h, const uint8_t* rgba, bool srgb) {
     int levels = 1 + (int)std::floor(std::log2((double)(w > h ? w : h)));
-    tex_ = rhi::createTexture2D(w, h, levels, srgb ? rhi::TexFormat::SRGBA8
-                                                   : rhi::TexFormat::RGBA8);
+    makeTexture(tex_, w, h, levels,
+                srgb ? rhi::TexFormat::SRGBA8 : rhi::TexFormat::RGBA8);
     rhi::uploadTexture2D(tex_, 0, w, h, rgba);
     rhi::generateMips(tex_);
     rhi::SamplerDesc smp;

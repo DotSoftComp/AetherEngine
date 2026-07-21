@@ -181,6 +181,14 @@ public:
     void setVar(const std::string& name, const Value& v);
     const std::map<std::string, Value>& vars() const { return vars_; } // save-games
 
+    // ---- entity messaging (SendEvent -> OnEvent) -------------------------
+    // Gameplay's cross-entity verb: a shot tells a demon "damage 25", a switch
+    // tells a door "open". Posting is deferred into a mailbox that the target's
+    // own onUpdate drains, so a script never re-enters another script's graph
+    // mid-step (and an event posted to an entity that hasn't started yet still
+    // arrives). Delivery is therefore within one frame, never mid-token.
+    void postEvent(const std::string& name, float value, uint32_t senderId);
+
     // Loop counters for ForLoop nodes (keyed per node, per token id).
     std::map<std::pair<int, int>, int> loopState;
 
@@ -214,6 +222,12 @@ private:
     std::map<int, Prox> prox_;
     std::map<int, bool> keyWas_;
     std::map<int, std::vector<Value>> eventOuts_; // event dataOut values for this fire
+    struct Mail {
+        std::string name;
+        float value = 0.0f;
+        uint32_t sender = 0;
+    };
+    std::vector<Mail> mailbox_; // drained at the top of onUpdate
     std::string projectRoot_;
     AssetLibrary* assets_ = nullptr; // outlives the World (see AssetLibrary docs)
     bool started_ = false;

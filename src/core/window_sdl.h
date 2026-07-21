@@ -26,6 +26,15 @@ public:
     void setTitle(const char* title);
     void setVSync(bool enabled);
 
+    // Relative ("captured") mouse: hides the cursor, confines it to the window
+    // and reports unbounded motion. A first-person camera needs this — with a
+    // free cursor the pointer reaches the edge of the screen and look deltas
+    // simply stop, so the camera jams part-way through a turn. Menus want it
+    // off so their buttons are clickable. Cheap to call every frame; only a
+    // change reaches SDL.
+    void setMouseCapture(bool captured);
+    bool mouseCaptured() const { return mouseCaptured_; }
+
     int width() const { return width_; }
     int height() const { return height_; }
     bool wasResized() { bool r = resized_; resized_ = false; return r; }
@@ -43,6 +52,7 @@ private:
     bool resized_ = false;
     float lastMouseX_ = 0, lastMouseY_ = 0;
     bool firstMouse_ = true;
+    bool mouseCaptured_ = false;
     Input input_;
 };
 

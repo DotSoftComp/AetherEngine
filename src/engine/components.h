@@ -17,6 +17,7 @@ inline void reflectMaterial(PropertyVisitor& v, Material& m) {
     v.visit("roughness", m.roughness, {PropKind::SliderNorm, "Roughness"});
     v.visit("emissive", m.emissive, {PropKind::HdrColor, "Emissive"});
     v.visit("uvScale", m.uvScale, {PropKind::Default, "UV Scale", 0.02f, 0.05f, 32.0f});
+    v.visit("worldUV", m.worldUV, {PropKind::Default, "World-space UVs"});
     v.visit("normalScale", m.normalScale, {PropKind::Default, "Normal Scale", 0.02f});
     v.visit("occlusionStrength", m.occlusionStrength, {PropKind::SliderNorm, "Occlusion"});
     v.visit("alphaCutoff", m.alphaCutoff, {PropKind::Default, "Alpha Cutoff", 0.01f});
@@ -35,6 +36,7 @@ public:
     const Mesh* mesh = nullptr;
     Material material;
     bool castShadow = true;
+    bool navStatic = false; // include this mesh's triangles when baking the navmesh
     float drawDistance = 0.0f; // cull beyond this camera distance (0 = never)
 
     // Asset identity for serialization + the editor's asset combos: the
@@ -51,6 +53,7 @@ public:
         v.visit("mesh", meshName, {PropKind::MeshName, "Mesh"});
         v.visit("texSet", texSetName, {PropKind::TexSetName, "Textures"});
         v.visit("castShadow", castShadow, {PropKind::Default, "Cast shadow"});
+        v.visit("navStatic", navStatic, {PropKind::Default, "Nav static (bake into navmesh)"});
         v.visit("drawDistance", drawDistance, {PropKind::Default, "Draw distance (0 = inf)", 0.5f, 0.0f, 10000.0f});
         v.beginGroup("material");
         reflectMaterial(v, material);
@@ -174,6 +177,7 @@ class ModelComponent : public Component {
 public:
     Model* model = nullptr;
     bool animate = true;
+    bool navStatic = false; // include this model's triangles when baking the navmesh
     int clip = 0; // clip index played when no Animator drives the pose
 
     // Project-relative asset path for serialization (resolved via AssetLibrary).
@@ -188,6 +192,7 @@ public:
     void reflect(PropertyVisitor& v) override {
         v.visit("path", modelPath, {PropKind::ModelPath, "Model"});
         v.visit("animate", animate, {PropKind::Default, "Animate"});
+        v.visit("navStatic", navStatic, {PropKind::Default, "Nav static (bake into navmesh)"});
         v.visit("clip", clip, {PropKind::Default, "Clip"});
     }
     void onDeserialized(AssetLibrary& assets) override {

@@ -40,6 +40,15 @@ struct UIWidget {
     std::string image;          // Image: project-relative sprite path
     float fontScale = 1.0f;     // Label/Button: text size multiplier
 
+    // Conditional visibility: when `showIfFlag` is set, this widget (and its
+    // children) only draw while that story flag matches — != 0 by default, or
+    // == showIfValue when that key is present. This is how a HUD shows the
+    // keys you actually carry, swaps the weapon name, or reveals a death
+    // overlay, without any script touching the document.
+    std::string showIfFlag;
+    bool hasShowIfValue = false;
+    float showIfValue = 0.0f;
+
     std::vector<UIWidget> children;
 };
 
@@ -58,9 +67,15 @@ bool saveUIDocument(const UIDocument& doc, const std::string& path);
 // Resolves one widget's rect inside its parent (shared by game + designer).
 Rect uiWidgetRect(const UIWidget& w, const Rect& parent);
 
-// Collects the ids of focusable (visible Button) widgets in tree order — the
+// True when a widget should draw this frame: `visible`, and (if it declares
+// showIfFlag) its flag condition holds. A null flagValue shows everything,
+// which is what the editor's designer preview wants.
+bool uiWidgetShown(const UIWidget& w, const std::function<int(const std::string&)>& flagValue);
+
+// Collects the ids of focusable (shown Button) widgets in tree order — the
 // menu-navigation order for keyboard/gamepad focus.
-void uiFocusables(const UIWidget& root, std::vector<std::string>& out);
+void uiFocusables(const UIWidget& root, std::vector<std::string>& out,
+                  const std::function<int(const std::string&)>& flagValue = {});
 
 // Draws the tree over `area` and reports clicked Button ids. `flagValue`
 // supplies story-flag lookups for bindings (may be null). `imageResolver`

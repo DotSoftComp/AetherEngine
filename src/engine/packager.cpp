@@ -132,6 +132,10 @@ bool packageGame(const Project& project, const PackageOptions& opts,
         if (project.hasModule())
             o << "  \"module\": \"" << jsonEsc(project.moduleName) << "\",\n";
         o << "  \"development\": " << (opts.development ? "true" : "false") << ",\n";
+        // Render settings travel with the build. A packaged game that looks
+        // different from the one you tested is not the game you tested.
+        if (!project.settingsJson.empty())
+            o << "  \"settings\": " << project.settingsJson << ",\n";
         o << "  \"engineVersion\": \"" << jsonEsc(project.engineVersion) << "\"\n";
         o << "}\n";
         std::ofstream f(joinPath(out, "game.json"), std::ios::binary);

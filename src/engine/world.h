@@ -26,6 +26,11 @@ public:
     struct Environment {
         Vec3 sunDir = normalize(Vec3(0.42f, 0.55f, 0.30f));
         float skyIntensity = 22.0f;
+        // Per-scene atmosphere (negative = renderer default / sky-derived).
+        float fogDensity = -1.0f;
+        float fogHeightFalloff = -1.0f;
+        Vec3 fogColor{-1, -1, -1};
+        float volumetricIntensity = -1.0f; // ray-marched light shafts
     } env;
 
     // Missions + story flags (Detroit-style objective tracking), ticked with
@@ -94,6 +99,51 @@ public:
     std::string takeSaveRequest() { std::string s; s.swap(saveReq_); return s; }
     std::string takeLoadRequest() { std::string s; s.swap(loadReq_); return s; }
 
+    // ---- level transitions ----------------------------------------------
+    // A scene swap tears down every entity, so it can never happen inside a
+    // script tick — a graph queues the map here (project-relative) and the app
+    // layer performs the load between frames, exactly like the save requests.
+    // Story flags survive the swap; the scene's own entities do not.
+    void requestLoadScene(const std::string& mapPath) { sceneReq_ = mapPath; }
+    std::string takeLoadSceneRequest() { std::string s; s.swap(sceneReq_); return s; }
+
+    // A game's own "Quit" menu item. The runtime honours this between frames;
+    // the editor ignores it (Stop is how you leave Play there).
+    void requestQuit() { quitReq_ = true; }
+    bool quitRequested() const { return quitReq_; }
+
+    // ---- time scale -----------------------------------------------------
+    // Multiplier the host applies to dt (and to the clock it feeds back in).
+    // 0 freezes the simulation while scripts keep ticking — which is what a
+    // pause menu needs: nothing moves, no cooldown advances, but the graph
+    // listening for the unpause key still runs. Also slow-motion.
+    void setTimeScale(float s) { timeScale_ = s < 0.0f ? 0.0f : s; }
+    float timeScale() const { return timeScale_; }
+
+    // ---- mouse capture --------------------------------------------------
+    // Whether the host should hide and lock the cursor this frame. Any rig
+    // that steers from mouse motion calls requestMouseLook() while it is
+    // driving (cleared at the top of every update), so a scene with a
+    // first-person camera captures the mouse and a menu scene does not — with
+    // no per-game wiring. A game that needs to disagree (a pause menu drawn
+    // over live gameplay) sets an explicit override, which wins until cleared.
+    void requestMouseLook() { mouseLookWanted_ = true; }
+    bool mouseLookWanted() const { return mouseLookWanted_; }
+    void setMouseCapture(bool captured) { mouseCaptureOverride_ = captured ? 1 : 0; }
+    void clearMouseCapture() { mouseCaptureOverride_ = -1; }
+    // Resolved answer for the host: the override if one is set, else whether a
+    // rig asked for mouse-look this frame.
+    bool wantsMouseCapture() const {
+        return mouseCaptureOverride_ >= 0 ? mouseCaptureOverride_ != 0 : mouseLookWanted_;
+    }
+
+    // The map currently loaded (project-relative), set by whoever loaded it.
+    // Lets gameplay say "restart this level" without every level's blueprint
+    // hard-coding its own filename — which is also what makes one death
+    // handler correct in a test arena and in a shipping map alike.
+    void setCurrentScene(const std::string& path) { currentScene_ = path; }
+    const std::string& currentScene() const { return currentScene_; }
+
     // ---- game-UI events -----------------------------------------------
     // Retained-UI Buttons post their id here when clicked (during the HUD draw,
     // after update). The next update's script tick reads them (OnUIButton),
@@ -128,7 +178,11 @@ private:
         Camera pose;
         bool isDefault = false;
     };
-    std::string saveReq_, loadReq_;
+    std::string saveReq_, loadReq_, sceneReq_, currentScene_;
+    bool quitReq_ = false;
+    float timeScale_ = 1.0f;
+    bool mouseLookWanted_ = false;  // set by rigs each frame, cleared in update()
+    int mouseCaptureOverride_ = -1; // -1 = follow the rigs, 0 = off, 1 = on
     std::vector<std::string> uiEvents_;
     std::vector<CameraShot> cameraShots_;
     std::string requestedCameraName_;

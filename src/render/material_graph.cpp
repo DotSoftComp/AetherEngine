@@ -34,14 +34,15 @@ unsigned mgTypeColor(MGType t) { // ABGR
 
 // ---- codegen context ------------------------------------------------------------
 struct MGEmitCtx {
-    // Distinct (path, srgb) texture slots, capped at 8 (units 13..20) —
-    // shared across the whole graph including inlined subgraphs.
-    std::vector<std::pair<std::string, bool>> textures;
-    int textureSlot(const std::string& path, bool srgb) {
+    // Distinct texture slots, capped at 8 (units 13..20) — shared across the
+    // whole graph including inlined subgraphs.
+    std::vector<MGTextureRef> textures;
+    int textureSlot(const std::string& path, bool srgb, bool normalMap = false) {
+        MGTextureRef want{path, srgb, normalMap};
         for (size_t i = 0; i < textures.size(); ++i)
-            if (textures[i].first == path && textures[i].second == srgb) return (int)i;
+            if (textures[i] == want) return (int)i;
         if (textures.size() >= 8) return -1;
-        textures.push_back({path, srgb});
+        textures.push_back(want);
         return (int)textures.size() - 1;
     }
 
@@ -181,7 +182,7 @@ std::vector<MGNodeDef> buildDefs() {
     b.back().in("UV", MGType::F2, "fs.uv").params("Image path", "Strength (def 1)").emit(
         [](const MGNode& n, const std::vector<std::string>& in, MGEmitCtx& ctx) {
             if (n.p.empty()) return std::string("vec3(0.0, 0.0, 1.0)"); // flat
-            int slot = ctx.textureSlot(n.p, /*srgb=*/false);
+            int slot = ctx.textureSlot(n.p, /*srgb=*/false, /*normalMap=*/true);
             if (slot < 0) return std::string("vec3(0.0, 0.0, 1.0)"); // slot cap hit
             float s = n.n > 0.0f ? n.n : 1.0f;
             return "mgUnpackNormal(texture(uMGTex" + std::to_string(slot) + ", " + in[0] +
@@ -431,11 +432,15 @@ bool generateMaterialGLSL(const MaterialGraph& g, MGGenerated& out, const MGSubL
                          "        N = normalize(mgTBN * mgTn);\n    }\n";
     }
 
+    for (const auto& [subPath, unused] : ctx.subCache) out.subgraphs.push_back(subPath);
+
     std::ostringstream decls;
+    // Z is reconstructed from XY: BC5 normal maps carry only two channels, and
+    // for classic RGB maps this is equivalent.
     decls << "vec3 mgUnpackNormal(vec3 t, float s) {\n"
-             "    vec3 n = t * 2.0 - 1.0;\n"
-             "    n.xy *= s;\n"
-             "    return normalize(n);\n"
+             "    vec2 xy = (t.xy * 2.0 - 1.0) * s;\n"
+             "    float z = sqrt(max(0.0, 1.0 - dot(xy, xy)));\n"
+             "    return normalize(vec3(xy, z));\n"
              "}\n";
     for (size_t i = 0; i < ctx.textures.size(); ++i)
         decls << "layout(binding = " << (13 + i) << ") uniform sampler2D uMGTex" << i << ";\n";
@@ -542,6 +547,7 @@ static std::string resolveProjectRel(const std::string& graphAbsPath, const std:
 bool MaterialGraphAsset::compile(const std::string& absPath) {
     valid = false;
     path = absPath;
+    sources.assign(1, absPath); // the graph file itself is always a dependency
     if (!loadMaterialGraph(graph, absPath)) return false;
 
     MGGenerated gen;
@@ -552,6 +558,7 @@ bool MaterialGraphAsset::compile(const std::string& absPath) {
         AE_ERROR("[MatGraph] %s has no Output node", absPath.c_str());
         return false;
     }
+    for (const std::string& sg : gen.subgraphs) sources.push_back(resolveProjectRel(absPath, sg));
 
     // Splice the generated blocks into the standard PBR fragment source.
     std::string fs = loadShaderSource("pbr.frag");
@@ -578,8 +585,8 @@ bool MaterialGraphAsset::compile(const std::string& absPath) {
     textures.clear();
     textures.resize(gen.textures.size());
     for (size_t i = 0; i < gen.textures.size(); ++i) {
-        if (gen.textures[i].first.empty()) continue;
-        std::string tp = resolveProjectRel(absPath, gen.textures[i].first);
+        if (gen.textures[i].path.empty()) continue;
+        std::string tp = resolveProjectRel(absPath, gen.textures[i].path);
         std::ifstream tf(tp, std::ios::binary | std::ios::ate);
         if (!tf) {
             AE_WARN("[MatGraph] missing texture: %s", tp.c_str());
@@ -589,11 +596,16 @@ bool MaterialGraphAsset::compile(const std::string& absPath) {
         tf.seekg(0);
         std::vector<uint8_t> bytes(sz);
         tf.read((char*)bytes.data(), (std::streamsize)sz);
+        sources.push_back(tp);
         ImageData img;
-        if (decodeImage(bytes.data(), bytes.size(), img))
-            textures[i].createCompressed(img.width, img.height, img.rgba.data(),
-                                         gen.textures[i].second,
-                                         contentHash64(bytes.data(), bytes.size()));
+        if (!decodeImage(bytes.data(), bytes.size(), img)) continue;
+        // The node's role sets the defaults; a sidecar can still override.
+        TextureImportSettings ts;
+        ts.srgb = gen.textures[i].srgb;
+        ts.normalMap = gen.textures[i].normalMap;
+        ts = loadImportSettings(tp, ts);
+        textures[i].createImported(img.width, img.height, img.rgba.data(), ts,
+                                   contentHash64(bytes.data(), bytes.size()));
     }
 
     int outIdx = graph.outputNode();

@@ -8,12 +8,16 @@ out vec4 fragColor;
 
 layout(binding = 0) uniform sampler2D texHDR;
 layout(binding = 1) uniform sampler2D texBloom;
+layout(binding = 2) uniform sampler2D texAvgLum; // 1x1 adapted luminance
 
-// UBO binding 2 (samplers occupy 0,1). Vulkan-ready: no default-block uniforms.
+// UBO binding 2 (samplers occupy 0,1,2). Vulkan-ready: no default-block uniforms.
 layout(std140, binding = 2) uniform Tonemap {
     float uExposure;
     float uBloomStrength;
     float uTime;
+    // 0 = uExposure is the final multiplier. 1 = auto: the scene's adapted
+    // luminance drives it and uExposure becomes a relative bias.
+    float uAutoExposure;
 };
 
 // Narkowicz ACES filmic approximation.
@@ -36,7 +40,15 @@ void main() {
     vec3 bloom = texture(texBloom, vUV).rgb;
     hdr = mix(hdr, bloom, uBloomStrength);
 
-    vec3 color = acesFilm(hdr * uExposure);
+    // Auto-exposure: scale so the adapted average luminance lands on a fixed
+    // middle-grey key, then apply uExposure as an artistic bias on top.
+    float exposure = uExposure;
+    if (uAutoExposure > 0.5) {
+        const float keyValue = 0.18; // middle grey
+        float avgLum = max(texture(texAvgLum, vec2(0.5)).r, 1e-4);
+        exposure = uExposure * (keyValue / avgLum);
+    }
+    vec3 color = acesFilm(hdr * exposure);
 
     // Gentle vignette.
     vec2 d = vUV - 0.5;

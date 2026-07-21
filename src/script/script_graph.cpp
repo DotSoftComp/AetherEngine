@@ -7,6 +7,8 @@
 #include "../engine/entity.h"
 #include "../engine/world.h"
 #include "../engine/assets.h"
+#include "../engine/components.h"
+#include "../engine/scene_io.h"
 #include "../core/json.h"
 #include "../core/log.h"
 #include "../core/paths.h"
@@ -132,6 +134,19 @@ struct Def {
         return *this;
     }
     Def& in(const char* name, PinType t, Value def = {}) {
+        // An unconnected pin must default to its own type's zero. Value{} is a
+        // Float 0, and a Float 0 read as a string is "0" — which silently broke
+        // every "leave the input empty to use the param instead" node, because
+        // the input was never actually empty.
+        if (def.type == PinType::Float && def.f == 0.0f && t != PinType::Float) {
+            switch (t) {
+            case PinType::Vec3: def = Value::V(Vec3(0)); break;
+            case PinType::Bool: def = Value::B(false); break;
+            case PinType::String: def = Value::S(""); break;
+            case PinType::Entity: def = Value::E(0); break;
+            default: break;
+            }
+        }
         d.dataIn.push_back({name, t, def});
         return *this;
     }
@@ -177,6 +192,12 @@ std::vector<NodeDef> buildDefs() {
     b.emplace_back("OnAction", "Events");
     b.back().event().eventOuts({"pressed"}).params("Action name (input map)").run(
         [](NodeCtx&) { return 0; });
+
+    // Receives a message aimed at THIS entity by another entity's SendEvent
+    // (or by BroadcastEvent). Fires once per message, in the frame it arrives.
+    b.emplace_back("OnEvent", "Events");
+    b.back().event().eventOuts({"then"}).out("Value", PinType::Float)
+        .out("Sender", PinType::Entity).params("Event name").run([](NodeCtx&) { return 0; });
 
     // ================= Flow =================
     b.emplace_back("If", "Flow");
@@ -293,6 +314,160 @@ std::vector<NodeDef> buildDefs() {
         return 0;
     });
 
+    // Instances a prefab asset at a position. The Spawned output lets the
+    // caller immediately configure the new entity (SendEvent it a direction,
+    // SetVarOn its health, ...) — the spawn-and-wire idiom every shooter needs.
+    b.emplace_back("SpawnPrefab", "Entity");
+    b.back().execOuts({"then"}).in("Position", PinType::Vec3).in("Yaw", PinType::Float)
+        .out("Spawned", PinType::Entity).params("Prefab (assets/entities/*.json)")
+        .run([](NodeCtx& c) {
+            AssetLibrary* assets = c.comp.assets();
+            if (!assets || c.node.p.empty()) return 0;
+            Entity* e = instantiatePrefab(c.world, *assets, c.node.p);
+            if (!e) return 0;
+            e->transform.position = c.inV(0);
+            float yaw = c.inF(1);
+            if (yaw != 0.0f) e->transform.rotation = quatAxisAngle(Vec3(0, 1, 0), radians(yaw));
+            c.out(0, Value::E(e->id()));
+            return 0;
+        });
+
+    // ---- entity messaging ----
+    b.emplace_back("SendEvent", "Entity");
+    b.back().exec().in("Target", PinType::Entity).in("Value", PinType::Float)
+        .params("Event name").run([](NodeCtx& c) {
+            Entity* t = c.inE(0);
+            auto* sg = t ? t->getComponent<ScriptGraphComponent>() : nullptr;
+            if (sg) sg->postEvent(c.node.p, c.inF(1), c.self().id());
+            return 0;
+        });
+
+    // Same message to every scripted entity — level-wide beats ("player died",
+    // "alarm"), so a graph never has to hold a list of listeners.
+    b.emplace_back("BroadcastEvent", "Entity");
+    b.back().exec().in("Value", PinType::Float).params("Event name").run([](NodeCtx& c) {
+        uint32_t from = c.self().id();
+        for (const auto& e : c.world.entities())
+            if (auto* sg = e->getComponent<ScriptGraphComponent>()) sg->postEvent(c.node.p, c.inF(0), from);
+        return 0;
+    });
+
+    // ---- cross-entity variables ----
+    b.emplace_back("GetVarOn", "Entity");
+    b.back().in("Entity", PinType::Entity).out("Value", PinType::Float).params("Variable name")
+        .run([](NodeCtx& c) {
+            Entity* e = c.inE(0);
+            auto* sg = e ? e->getComponent<ScriptGraphComponent>() : nullptr;
+            c.out(0, sg ? sg->getVar(c.node.p) : Value{});
+            return kEnd;
+        });
+
+    b.emplace_back("SetVarOn", "Entity");
+    b.back().exec().in("Entity", PinType::Entity).in("Value", PinType::Float)
+        .params("Variable name").run([](NodeCtx& c) {
+            Entity* e = c.inE(0);
+            if (auto* sg = e ? e->getComponent<ScriptGraphComponent>() : nullptr)
+                sg->setVar(c.node.p, c.in(1));
+            return 0;
+        });
+
+    // Nearest entity whose name contains the filter — the cheap "who is near
+    // me" query (enemies looking for the player, a shot looking for a victim)
+    // that avoids hand-maintained entity lists.
+    // Nearest entity whose name contains the filter — the cheap "who is near
+    // me" query (enemies looking for the player, a shot looking for a victim)
+    // that avoids hand-maintained entity lists.
+    //
+    // Direction + MinDot narrow it to a CONE, which is what targeting actually
+    // needs: the nearest enemy overall is frequently the one standing behind
+    // you, and an auto-aim that snaps backwards is worse than none. Leave
+    // MinDot at -1 for "any direction".
+    b.emplace_back("FindNearest", "Entity");
+    b.back().in("Origin", PinType::Vec3).in("MaxDist", PinType::Float, Value::F(1e9f))
+        .in("Direction", PinType::Vec3).in("MinDot", PinType::Float, Value::F(-1.0f))
+        .out("Entity", PinType::Entity).out("Distance", PinType::Float)
+        .out("Found", PinType::Bool)
+        .params("Name contains").run([](NodeCtx& c) {
+            Vec3 origin = c.inV(0);
+            float maxD = c.inF(1), best = maxD * maxD;
+            Vec3 dir = c.inV(2);
+            float minDot = c.inF(3);
+            bool coned = minDot > -1.0f && dot(dir, dir) > 1e-6f;
+            if (coned) dir = normalize(dir);
+            Entity* found = nullptr;
+            for (const auto& e : c.world.entities()) {
+                if (!e->active() || e.get() == &c.self()) continue;
+                if (!c.node.p.empty() && e->name().find(c.node.p) == std::string::npos) continue;
+                Vec3 d = e->worldPosition() - origin;
+                float d2 = dot(d, d);
+                if (d2 > best || d2 < 1e-8f) continue;
+                if (coned && dot(d / std::sqrt(d2), dir) < minDot) continue;
+                best = d2;
+                found = e.get();
+            }
+            c.out(0, Value::E(found ? found->id() : 0));
+            c.out(1, Value::F(found ? std::sqrt(best) : maxD));
+            c.out(2, Value::B(found != nullptr));
+            return kEnd;
+        });
+
+    // Yaw-only facing (characters stay upright), the form gameplay actually
+    // wants — a full look-at would tip a walking enemy onto its nose.
+    b.emplace_back("LookAt", "Entity");
+    b.back().exec().in("Entity", PinType::Entity).in("Target", PinType::Vec3).run([](NodeCtx& c) {
+        Entity* e = c.inE(0);
+        if (!e) return 0;
+        Vec3 d = c.inV(1) - e->worldPosition();
+        if (d.x * d.x + d.z * d.z < 1e-8f) return 0;
+        e->transform.rotation = quatAxisAngle(Vec3(0, 1, 0), std::atan2(d.x, d.z) + PI);
+        return 0;
+    });
+
+    // ---- live material tweaks (hit flashes, powered-down lights, ...) ----
+    // Turns a collider into a sensor (and back). The moving-platform escape
+    // hatch: a rising door or a lift that still has a solid body while it
+    // travels will sweep whatever is standing in it, and the solver resolves
+    // that penetration by launching the victim. Gameplay wants "stop colliding
+    // for the duration of the move", which is exactly this.
+    b.emplace_back("SetTrigger", "Physics");
+    b.back().exec().in("Entity", PinType::Entity).in("IsTrigger", PinType::Bool, Value::B(true))
+        .run([](NodeCtx& c) {
+            Entity* e = c.inE(0);
+            if (auto* col = e ? e->getComponent<ColliderComponent>() : nullptr)
+                col->isTrigger = c.inB(1);
+            return 0;
+        });
+
+    b.emplace_back("SetEmissive", "Entity");
+    b.back().exec().in("Entity", PinType::Entity).in("Color", PinType::Vec3).run([](NodeCtx& c) {
+        Entity* e = c.inE(0);
+        if (auto* mr = e ? e->getComponent<MeshRenderer>() : nullptr) mr->material.emissive = c.inV(1);
+        return 0;
+    });
+
+    b.emplace_back("SetBaseColor", "Entity");
+    b.back().exec().in("Entity", PinType::Entity).in("Color", PinType::Vec3)
+        .in("Alpha", PinType::Float, Value::F(1)).run([](NodeCtx& c) {
+            Entity* e = c.inE(0);
+            if (auto* mr = e ? e->getComponent<MeshRenderer>() : nullptr) {
+                Vec3 rgb = c.inV(1);
+                mr->material.baseColor = Vec4(rgb.x, rgb.y, rgb.z, c.inF(2));
+            }
+            return 0;
+        });
+
+    b.emplace_back("SetLight", "Entity");
+    b.back().exec().in("Entity", PinType::Entity).in("Intensity", PinType::Float)
+        .in("Color", PinType::Vec3, Value::V(Vec3(-1, -1, -1))).run([](NodeCtx& c) {
+            Entity* e = c.inE(0);
+            auto* l = e ? e->getComponent<LightComponent>() : nullptr;
+            if (!l) return 0;
+            l->intensity = c.inF(1);
+            Vec3 col = c.inV(2);
+            if (col.x >= 0.0f) l->color = col; // negative = keep current color
+            return 0;
+        });
+
     // ================= Physics =================
     b.emplace_back("GetVelocity", "Physics");
     b.back().in("Entity", PinType::Entity).out("Velocity", PinType::Vec3).run([](NodeCtx& c) {
@@ -337,11 +512,14 @@ std::vector<NodeDef> buildDefs() {
     });
 
     b.emplace_back("Raycast", "Physics");
+    // Ignore takes the entity the ray starts inside — a shooter, or a monster
+    // testing line of sight from its own head. Leave it unconnected and the
+    // ray can hit whatever cast it.
     b.back().in("Origin", PinType::Vec3).in("Direction", PinType::Vec3, Value::V(Vec3(0, -1, 0)))
-        .in("MaxDist", PinType::Float, Value::F(100))
+        .in("MaxDist", PinType::Float, Value::F(100)).in("Ignore", PinType::Entity)
         .out("Hit", PinType::Bool).out("Entity", PinType::Entity).out("Point", PinType::Vec3)
         .run([](NodeCtx& c) {
-            RayHit h = c.world.physics.raycast(c.world, c.inV(0), c.inV(1), c.inF(2));
+            RayHit h = c.world.physics.raycast(c.world, c.inV(0), c.inV(1), c.inF(2), c.inE(3));
             c.out(0, Value::B(h.hit));
             c.out(1, Value::E(h.entity ? h.entity->id() : 0));
             c.out(2, Value::V(h.point));
@@ -438,6 +616,13 @@ std::vector<NodeDef> buildDefs() {
         c.out(0, Value::V(c.inV(0) * c.inF(1)));
         return kEnd;
     });
+    b.emplace_back("Dot", "Math");
+    b.back().in("A", PinType::Vec3).in("B", PinType::Vec3).out("Out", PinType::Float)
+        .run([](NodeCtx& c) {
+            c.out(0, Value::F(dot(c.inV(0), c.inV(1))));
+            return kEnd;
+        });
+
     b.emplace_back("Distance", "Math");
     b.back().in("A", PinType::Vec3).in("B", PinType::Vec3).out("Out", PinType::Float).run(
         [](NodeCtx& c) {
@@ -527,6 +712,44 @@ std::vector<NodeDef> buildDefs() {
         c.world.missions.setFlag(c.node.p, (int)c.inF(0));
         return 0;
     });
+    // Read/modify a flag whose NAME is itself data. Without these, anything
+    // table-driven (a weapon row that says which ammo pool it spends, a pickup
+    // that says which counter it fills) has to fan out into one hard-coded
+    // branch per flag; with them it stays one node.
+    b.emplace_back("GetFlagNamed", "Game");
+    b.back().in("Name", PinType::String).out("Value", PinType::Float).run([](NodeCtx& c) {
+        c.out(0, Value::F((float)c.world.missions.flag(c.inS(0))));
+        return kEnd;
+    });
+    b.emplace_back("SetFlagNamed", "Game");
+    b.back().exec().in("Name", PinType::String).in("Value", PinType::Float).run([](NodeCtx& c) {
+        c.world.missions.setFlag(c.inS(0), (int)c.inF(1));
+        return 0;
+    });
+
+    // Accumulate with saturation — the shape almost every counter in a game
+    // actually wants (health that caps, ammo that caps, a score that only
+    // rises). Out is the value after clamping, so the caller can react to it.
+    auto addFlag = [](NodeCtx& c, const std::string& name, float delta, float lo, float hi) {
+        float v = (float)c.world.missions.flag(name) + delta;
+        v = v < lo ? lo : (v > hi ? hi : v);
+        c.world.missions.setFlag(name, (int)v);
+        c.out(0, Value::F(v));
+        return 0;
+    };
+    b.emplace_back("AddFlag", "Game");
+    b.back().exec().in("Delta", PinType::Float, Value::F(1))
+        .in("Min", PinType::Float, Value::F(-1e9f)).in("Max", PinType::Float, Value::F(1e9f))
+        .out("Value", PinType::Float).params("Flag").run([addFlag](NodeCtx& c) {
+            return addFlag(c, c.node.p, c.inF(0), c.inF(1), c.inF(2));
+        });
+    b.emplace_back("AddFlagNamed", "Game");
+    b.back().exec().in("Name", PinType::String).in("Delta", PinType::Float, Value::F(1))
+        .in("Min", PinType::Float, Value::F(-1e9f)).in("Max", PinType::Float, Value::F(1e9f))
+        .out("Value", PinType::Float).run([addFlag](NodeCtx& c) {
+            return addFlag(c, c.inS(0), c.inF(1), c.inF(2), c.inF(3));
+        });
+
     b.emplace_back("RequestCamera", "Game");
     b.back().exec().in("Blend", PinType::Float, Value::F(0)).params(
         "Camera name (empty = release)").run([](NodeCtx& c) {
@@ -534,12 +757,60 @@ std::vector<NodeDef> buildDefs() {
         return 0;
     });
     b.emplace_back("PlaySound", "Game");
-    b.back().exec().in("Volume", PinType::Float, Value::F(1)).params("Clip (.wav path)").run(
-        [](NodeCtx& c) {
-            SoundId s = audioEngine().loadSound(c.comp.resolveAsset(c.node.p));
+    // The Clip input overrides the param when connected, so a weapon's fire
+    // sound can come out of the same data row as its damage and rate.
+    b.back().exec().in("Volume", PinType::Float, Value::F(1)).in("Clip", PinType::String)
+        .params("Clip (.wav path)").run([](NodeCtx& c) {
+            std::string clip = c.inS(1);
+            if (clip.empty()) clip = c.node.p;
+            if (clip.empty()) return 0;
+            SoundId s = audioEngine().loadSound(c.comp.resolveAsset(clip));
             if (s >= 0) audioEngine().playOneShot(s, c.inF(0));
             return 0;
         });
+
+    // Force the cursor locked or free, overriding the default (which follows
+    // whichever camera rig is steering). A pause menu drawn over live gameplay
+    // is the case that needs it: the first-person camera is still there asking
+    // for the mouse, but the player needs a pointer to click Resume with.
+    // Capture = -1 hands control back to the rigs.
+    // 0 = frozen (pause), 1 = normal, 0.3 = slow motion. Scripts keep running
+    // at any scale, so whatever set 0 can still set it back.
+    b.emplace_back("SetTimeScale", "Game");
+    b.back().exec().in("Scale", PinType::Float, Value::F(1)).run([](NodeCtx& c) {
+        c.world.setTimeScale(c.inF(0));
+        return 0;
+    });
+
+    b.emplace_back("SetMouseCapture", "Game");
+    b.back().exec().in("Capture", PinType::Float, Value::F(1)).run([](NodeCtx& c) {
+        float v = c.inF(0);
+        if (v < 0.0f) c.world.clearMouseCapture();
+        else c.world.setMouseCapture(v != 0.0f);
+        return 0;
+    });
+
+    b.emplace_back("QuitGame", "Game");
+    b.back().exec().run([](NodeCtx& c) {
+        c.world.requestQuit();
+        return 0;
+    });
+    // Level transition. Queued, not immediate: the app layer swaps the scene
+    // between frames (see World::requestLoadScene), so the rest of this graph's
+    // token still runs against a live world.
+    b.emplace_back("LoadScene", "Game");
+    b.back().exec().params("Map (assets/maps/*.json)").run([](NodeCtx& c) {
+        if (!c.node.p.empty()) c.world.requestLoadScene(c.node.p);
+        return 0;
+    });
+
+    // Restart the level that is running, whatever it is.
+    b.emplace_back("ReloadScene", "Game");
+    b.back().exec().run([](NodeCtx& c) {
+        if (!c.world.currentScene().empty()) c.world.requestLoadScene(c.world.currentScene());
+        return 0;
+    });
+
     b.emplace_back("StartMission", "Game");
     b.back().exec().params("Mission id").run([](NodeCtx& c) {
         c.world.missions.startMission(c.node.p);
@@ -905,6 +1176,7 @@ void ScriptGraphComponent::onDeserialized(AssetLibrary& assets) {
     prox_.clear();
     keyWas_.clear();
     eventOuts_.clear();
+    mailbox_.clear();
     loopState.clear();
     started_ = false;
     projectRoot_ = assets.projectRoot();
@@ -926,6 +1198,15 @@ Value ScriptGraphComponent::getVar(const std::string& name) const {
     return it != vars_.end() ? it->second : Value{};
 }
 void ScriptGraphComponent::setVar(const std::string& name, const Value& v) { vars_[name] = v; }
+
+void ScriptGraphComponent::postEvent(const std::string& name, float value, uint32_t senderId) {
+    if (mailbox_.size() >= 256) { // a feedback loop between two graphs, not a game
+        AE_WARN("[Script] mailbox full on %s — event '%s' dropped", graphPath.c_str(),
+                name.c_str());
+        return;
+    }
+    mailbox_.push_back({name, value, senderId});
+}
 
 Value ScriptGraphComponent::evalDataOut(int nodeIdx, int outIdx, float dt, int depth) {
     const ScriptNode& n = graph_.nodes[nodeIdx];
@@ -1079,8 +1360,20 @@ void ScriptGraphComponent::onStart() {
 }
 
 void ScriptGraphComponent::onUpdate(float dt) {
-    if (!started_ || graph_.nodes.empty()) return;
+    if (!started_ || graph_.nodes.empty()) { mailbox_.clear(); return; }
     World& w = world();
+
+    // ---- deliver mail (SendEvent from other entities) ----
+    // Swapped out first: an OnEvent handler that posts back to us must land in
+    // the NEXT frame's mailbox, not this loop.
+    if (!mailbox_.empty()) {
+        std::vector<Mail> inbox;
+        inbox.swap(mailbox_);
+        for (const Mail& m : inbox)
+            for (size_t i = 0; i < graph_.nodes.size(); ++i)
+                if (graph_.nodes[i].type == "OnEvent" && graph_.nodes[i].p == m.name)
+                    fireEvent((int)i, dt, {Value::F(m.value), Value::E(m.sender)});
+    }
 
     // ---- poll events ----
     for (size_t i = 0; i < graph_.nodes.size(); ++i) {

@@ -33,7 +33,12 @@ std::string esc(const std::string& s) {
 
 std::string num(float v) {
     char buf[48];
-    std::snprintf(buf, sizeof(buf), "%g", v);
+    // 9 significant digits round-trips a float exactly. "%g" gives 6, which is
+    // fine to read but loses the low bits — and anything the loader normalizes
+    // (a sun direction, a quaternion) then comes back a hair different, so a
+    // save/load/save cycle never settles and the verify round-trip flags drift
+    // on a scene nobody touched.
+    std::snprintf(buf, sizeof(buf), "%.9g", v);
     return buf;
 }
 
@@ -342,8 +347,18 @@ bool deserializeWorldJson(World& world, AssetLibrary& assets, const JsonValue& r
     }
     world.clear();
     if (const JsonValue* env = root.find("environment")) {
-        world.env.sunDir = normalize(readVec3(env->find("sunDir"), world.env.sunDir));
+        // Normalize only when the authored vector actually needs it. Running
+        // normalize() over an already-unit vector is not idempotent in float,
+        // so doing it unconditionally means every save/load nudges the sun and
+        // the round-trip check never converges.
+        Vec3 sun = readVec3(env->find("sunDir"), world.env.sunDir);
+        float len2 = dot(sun, sun);
+        world.env.sunDir = std::fabs(len2 - 1.0f) > 1e-6f ? normalize(sun) : sun;
         world.env.skyIntensity = (float)env->num("skyIntensity", world.env.skyIntensity);
+        world.env.fogDensity = (float)env->num("fogDensity", -1.0);
+        world.env.fogHeightFalloff = (float)env->num("fogHeightFalloff", -1.0);
+        world.env.fogColor = readVec3(env->find("fogColor"), Vec3(-1, -1, -1));
+        world.env.volumetricIntensity = (float)env->num("volumetric", -1.0);
     }
     // Spawn preserving the authored Guids so serialized references resolve.
     spawnEntityArray(world, assets, *ents, nullptr, false);
@@ -387,6 +402,18 @@ bool loadWorld(World& world, AssetLibrary& assets, const std::string& path) {
         return false;
     }
     AE_LOG("[Scene] loaded %d entities from %s", (int)world.entities().size(), path.c_str());
+    return true;
+}
+
+bool processSceneRequest(World& world, AssetLibrary& assets) {
+    std::string map = world.takeLoadSceneRequest();
+    if (map.empty()) return false;
+    // Flags are the campaign's memory (keys carried, levels cleared, score), so
+    // they outlive the map the way a save-game would; loadWorld resets the rest.
+    std::map<std::string, int> carried = world.missions.flags();
+    if (!loadWorld(world, assets, assets.resolvePath(map))) return false;
+    world.setCurrentScene(map);
+    for (const auto& kv : carried) world.missions.setFlag(kv.first, kv.second);
     return true;
 }
 
@@ -502,7 +529,11 @@ bool saveEntityPrefab(const Entity& root, AssetLibrary& assets, const std::strin
 
 Entity* instantiatePrefab(World& world, AssetLibrary& assets, const std::string& path,
                           Entity* parent) {
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    // Accept a project-relative path ("assets/entities/imp.json") as well as an
+    // absolute one: scripts and scene files reference prefabs the same way they
+    // reference every other asset, and resolvePath passes absolutes through.
+    std::string abs = assets.resolvePath(path);
+    std::ifstream f(abs, std::ios::binary | std::ios::ate);
     if (!f) {
         AE_ERROR("[Prefab] cannot open %s", path.c_str());
         return nullptr;

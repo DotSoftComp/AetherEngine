@@ -16,6 +16,12 @@ bool saveWorld(const World& world, AssetLibrary& assets, const std::string& path
 // Replaces the World's current contents (clear + rebuild).
 bool loadWorld(World& world, AssetLibrary& assets, const std::string& path);
 
+// Performs a pending World::requestLoadScene between frames (never during a
+// script tick — the swap destroys every entity, including the graph that asked
+// for it). Story flags carry across the transition; scene contents do not.
+// Returns true if a scene was swapped in. Call it right after world.update().
+bool processSceneRequest(World& world, AssetLibrary& assets);
+
 // In-memory equivalents (no file I/O, no logging): the exact same JSON as
 // save/loadWorld, used for editor undo/redo snapshots and any transient
 // round-trip. deserializeWorld replaces the World's contents.

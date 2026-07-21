@@ -15,6 +15,13 @@ in VS_OUT {
 layout(location = 0) out vec4 outDirect;
 layout(location = 1) out vec4 outAmbient;
 layout(location = 2) out vec4 outNormal;
+// Screen-space reflections need to know, per pixel, HOW MUCH light a mirror
+// direction would contribute and how sharp it is. The lighting is already
+// resolved by the time this pass ends, so that has to be recorded here:
+// rgb = the specular weight (F0*brdf.x + brdf.y, i.e. what the IBL specular is
+// multiplied by), a = roughness. SSR then replaces the environment probe with
+// what the screen actually shows, scaled by exactly the same weight.
+layout(location = 3) out vec4 outSpecular;
 
 // ---- material ----
 #include "pbr_uniforms.glsl"
@@ -169,8 +176,21 @@ vec3 transmission(vec3 N, vec3 V, vec3 L, vec3 radiance, vec3 albedo) {
     return (td * 1.5 + 0.08) * uTranslucency * uSSSTint * albedo * radiance * (0.25 / PI);
 }
 
+// World-space (triplanar-lite) UVs: project world position along whichever axis
+// the surface faces least. Level geometry built from non-uniformly scaled cubes
+// has useless mesh UVs (0..1 per face, so a 12m wall and a 1m crate get the same
+// texel density); this keeps texel size constant no matter how a brush is
+// stretched. One projection per fragment, not three blended — the cost of a full
+// triplanar blend buys nothing on axis-aligned architecture.
+vec2 worldUV(vec3 p, vec3 n) {
+    vec3 a = abs(n);
+    if (a.y >= a.x && a.y >= a.z) return p.xz;  // floors / ceilings
+    return (a.x > a.z) ? p.zy : p.xy;           // walls
+}
+
 void main() {
-    vec2 uv = fs.uv * uUVScale;
+    vec2 uv = ((uTexFlags & 32) != 0 ? worldUV(fs.worldPos, normalize(fs.normal)) : fs.uv)
+              * uUVScale;
 
     // ---- material inputs: either the standard uniform+texture path, or code
     // generated from a material graph (MATERIAL_GRAPH variants). Both fill the
@@ -218,8 +238,11 @@ void main() {
 //__MG_NORMAL__
 #else
     if ((uTexFlags & 2) != 0) {
-        vec3 tn = texture(texNormal, uv).xyz * 2.0 - 1.0;
-        tn.xy *= uNormalScale;
+        // Z is reconstructed from XY rather than read: BC5 normal maps only
+        // store two channels, and for classic RGB maps this is equivalent.
+        vec3 tn;
+        tn.xy = (texture(texNormal, uv).xy * 2.0 - 1.0) * uNormalScale;
+        tn.z = sqrt(max(0.0, 1.0 - dot(tn.xy, tn.xy)));
         mat3 TBN = mat3(normalize(fs.tangent), normalize(fs.bitangent), geoN);
         N = normalize(TBN * tn);
     }
@@ -299,7 +322,8 @@ void main() {
     vec3 R = reflect(-V, N);
     vec3 prefiltered = textureLod(texPrefilter, R, roughness * uPrefilterMips).rgb;
     vec2 brdf = texture(texBrdfLUT, vec2(NdotV, roughness)).rg;
-    vec3 specularIBL = prefiltered * (F0 * brdf.x + brdf.y);
+    vec3 specWeight = F0 * brdf.x + brdf.y;
+    vec3 specularIBL = prefiltered * specWeight;
 
     vec3 ambient = (diffuseIBL + specularIBL) * ao;
 
@@ -329,6 +353,7 @@ void main() {
         outDirect = vec4(color, alpha);
         outAmbient = vec4(0.0);
         outNormal = vec4(0.0);
+        outSpecular = vec4(0.0); // transparents are not SSR receivers
         return;
     }
 
@@ -337,4 +362,5 @@ void main() {
     outDirect = vec4(direct, 1.0);
     outAmbient = vec4(ambient, 1.0);
     outNormal = vec4(viewN * 0.5 + 0.5, 1.0);
+    outSpecular = vec4(specWeight * ao, roughness);
 }

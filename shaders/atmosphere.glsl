@@ -25,7 +25,23 @@ vec3 atmosphere(vec3 rayDir, vec3 rayOrigin, vec3 sunDir, float sunIntensity) {
 
     vec2 p = raySphere(rayOrigin, rayDir, rAtmos);
     if (p.x > p.y) return vec3(0.0);
-    p.y = min(p.y, raySphere(rayOrigin, rayDir, rPlanet).x);
+
+    // Both clamps below are about the viewer being INSIDE the atmosphere, where
+    // a naive ray-sphere result points backwards.
+    //
+    // Near: the atmosphere's near root sits behind the eye (~12 800 km back for
+    // a vertical ray). March from the eye, not from there.
+    p.x = max(p.x, 0.0);
+    // Far: the ground only occludes if it is actually AHEAD. For an upward ray
+    // both planet roots are negative (the sphere is behind you), and taking the
+    // near one unconditionally set the march to end 12 700 km behind the eye —
+    // so every sample landed inside the planet, exp(-h/H) overflowed, and the
+    // transmittance extinguished the ray to black. That was the black cap over
+    // the zenith: with a bright lit ground below it, the sky read as upside
+    // down.
+    vec2 planet = raySphere(rayOrigin, rayDir, rPlanet);
+    if (planet.x > 0.0) p.y = min(p.y, planet.x);
+    if (p.y <= p.x) return vec3(0.0);
     float iStepSize = (p.y - p.x) / float(iSteps);
 
     float iTime = p.x;
@@ -91,10 +107,19 @@ vec3 skyRadiance(vec3 rayDir, vec3 sunDir, float sunIntensity) {
 
     // Below the horizon: a sun-lit lambertian ground plane. Metals and glossy
     // materials reflect this hemisphere, so it must carry plausible bounce
-    // energy (matching the bright floor of the scene) instead of fading black.
+    // energy instead of fading black.
+    //
+    // Its brightness is derived from the sky rather than from sunIntensity
+    // directly. A fixed multiple of sunIntensity made the ground several times
+    // brighter than the sky it is lit by, so the environment's strongest light
+    // came from underneath and every object picked up ambient from below —
+    // which is the other half of the sky looking upside down. A lambertian
+    // ground under a sky of radiance L reflects albedo * L (the pi in E = pi*L
+    // cancels against the 1/pi in the BRDF), plus the sun's direct share.
     float ground = smoothstep(-0.02, -0.12, rayDir.y);
+    vec3 skyUp = atmosphere(vec3(0.0, 1.0, 0.0), origin, sunDir, sunIntensity);
     vec3 groundAlbedo = vec3(0.32, 0.30, 0.28);
-    vec3 groundLit = groundAlbedo * (max(sunDir.y, 0.0) * 0.9 + 0.1) * sunIntensity * 0.26;
+    vec3 groundLit = groundAlbedo * (skyUp * 0.85 + vec3(max(sunDir.y, 0.0) * sunIntensity * 0.012));
     // Keep the accumulated in-scattering so the ground aerial-fades near the horizon.
     sky = mix(sky, groundLit + sky * 0.4, ground);
     return sky;

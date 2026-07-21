@@ -111,7 +111,9 @@ enum class TexFormat {
     BC1_SRGB,
     BC3,         // block-compressed with alpha (DXT5)
     BC3_SRGB,
+    BC5,         // block-compressed two-channel (RG) — tangent-space normals
     R8,          // render targets
+    R16F,        // single-channel HDR (luminance reduction)
     RG16F,
     RGBA16F,
     R11G11B10F,
@@ -134,6 +136,10 @@ struct TextureHandle {
 };
 
 TextureHandle createTexture2D(int width, int height, int mipLevels, TexFormat format);
+// Replaces the texture object behind an EXISTING handle, keeping its id. Hot
+// re-import relies on this: materials cache raw texture ids, so a re-imported
+// image must land on the same id or every material referencing it would break.
+void recreateTexture2D(TextureHandle h, int width, int height, int mipLevels, TexFormat format);
 TextureHandle createTextureCube(int size, int mipLevels, TexFormat format);
 TextureHandle createTexture2DArray(int width, int height, int layers, TexFormat format);
 // Uncompressed RGBA8 upload into one mip level.
